@@ -2,7 +2,7 @@ Require Import List.
 Import ListNotations.
 Require Import Coq.Lists.ListSet.
 Require Import Coq.Program.Equality.
-Require Import Omega.
+Require Import Lia.
 Require Import Extraction.
 
 Require Import Unification.
@@ -84,7 +84,7 @@ Lemma first_nats_less (n k : nat) (H : In n (first_nats k)) : n < k.
 Proof.
   induction k.
   { inversion H. }
-  { inversion H. { omega. } { apply IHk in H0. omega. } }
+  { inversion H. { lia. } { apply IHk in H0. lia. } }
 Qed.
 
 Lemma well_formed_initial_state
@@ -275,10 +275,10 @@ Proof.
   { constructor. constructor; auto.
     intros. good_inversion FRN_COUNTER. subst. auto. }
   { constructor. constructor; auto.
-    1-2: intros; eapply lt_trans; eauto.
-    intros. destruct (eq_nat_dec n x).
-    { omega. }
-    { apply Nat.lt_lt_succ_r. apply FV_LT_COUNTER. econstructor; eauto. } }
+    1-2: intros; eapply PeanoNat.Nat.lt_trans; eauto.
+    intros. destruct (PeanoNat.Nat.eq_dec n x).
+    { lia. }
+    { apply PeanoNat.Nat.lt_lt_succ_r. apply FV_LT_COUNTER. econstructor; eauto. } }
   { constructor. constructor; auto.
     specialize (proj2_sig (LanguageSLD.Prog r)). intro CC.
     simpl in CC. destruct CC as [CL _]. red in CL. red in CL. auto. }
@@ -290,7 +290,7 @@ Proof.
   { specialize (IHEV WF_L). good_inversion IHEV.
     constructor. constructor; auto. intros.
     eapply counter_in_next_state in EV; eauto.
-    destruct EV as [frn' [LE ISC]]. eapply lt_le_trans.
+    destruct EV as [frn' [LE ISC]]. eapply PeanoNat.Nat.lt_le_trans.
     2: eauto.
     auto. }
   { specialize (IHEV WF_L). good_inversion IHEV.
@@ -301,7 +301,7 @@ Proof.
       eapply counter_in_answer; eauto. }
     { constructor; auto. intros.
       eapply counter_in_next_state in EV; eauto.
-      destruct EV as [frn' [Le ISC]]. eapply lt_le_trans.
+      destruct EV as [frn' [Le ISC]]. eapply PeanoNat.Nat.lt_le_trans.
       2: eauto.
       auto. } }
 Qed.

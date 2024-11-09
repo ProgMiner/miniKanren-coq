@@ -1,7 +1,7 @@
 Require Import List.
 Require Import Coq.Lists.ListSet.
 Import ListNotations.
-Require Import Omega.
+Require Import Lia.
 
 Require Import Unification.
 Require Import LanguageSLD.
@@ -343,7 +343,7 @@ Proof.
         induction s.
         { inversion eq. }
         { intros. destruct a as [y t0]. destruct v; good_inversion Heqs.
-          destruct (Nat.eq_dec n x).
+          destruct (PeanoNat.Nat.eq_dec n x).
           { good_inversion eq. rewrite eqfx. auto. }
           { apply IHs with v; auto. } } }
       subst. red. simpl. clear eqfx. clear eq. induction t.
@@ -483,7 +483,7 @@ Proof.
       1, 3: symmetry.
       1, 4: apply repr_fun_apply_compose.
       all: apply apply_repr_fun_fv; intros; unfold subst_repr_fun_compose;
-        simpl; destruct (Nat.eq_dec a1 x); subst; symmetry; auto;
+        simpl; destruct (PeanoNat.Nat.eq_dec a1 x); subst; symmetry; auto;
         apply F12_EQ; auto; intro; subst; auto. }
     { apply dslgDisjL; eauto. eapply IHg1_1; eauto. }
     { apply dslgDisjR; eauto. eapply IHg1_2; eauto. }
@@ -500,12 +500,12 @@ Proof.
                                          (~ is_fv_of_goal y (Fresh fg)) /\
                                          (~ is_fv_of_goal y (Fresh rfg))).
       { destruct (name_eq_dec a0 n); destruct (name_eq_dec a0 (S n));
-        destruct (name_eq_dec a2 n); destruct (name_eq_dec a2 (S n)); subst; try omega.
+        destruct (name_eq_dec a2 n); destruct (name_eq_dec a2 (S n)); subst; try lia.
         5, 6, 8, 9: exists n.
         1, 3, 9: exists (S n).
         4, 5: exists (S (S n)).
-        all: repeat split; try omega.
-        all: intro CH; try apply G1_BOUND in CH; try apply G2_BOUND in CH; omega. }
+        all: repeat split; try lia.
+        all: intro CH; try apply G1_BOUND in CH; try apply G2_BOUND in CH; lia. }
       destruct very_fresh_var as [a3 [a03_neq [a23_neq [a3_fresh a3_rfresh]]]].
       assert (a13_neq : a1 <> a3).
       { intro; subst; auto. }
@@ -518,11 +518,11 @@ Proof.
       { subst.
         apply H with a0 (max n (max (S a0) (S a3))) a0 a3 fn1; eauto.
         { intros. destruct (name_eq_dec x a0); subst.
-          { zify. omega. }
-          { assert (x < n); eauto. zify. omega. } }
+          { lia. }
+          { assert (x < n); eauto. lia. } }
         { intros. destruct (name_eq_dec x a3); subst.
-          { zify. omega. }
-          { assert (x < n); eauto. zify. omega. } }
+          { lia. }
+          { assert (x < n); eauto. lia. } }
         { destruct (name_eq_dec a3 a3); subst.
           { reflexivity. }
           { contradiction. } }
@@ -539,11 +539,11 @@ Proof.
       assert (AH2 : in_denotational_sem_lev_goal (S l) (rfg a3) fn2).
       { apply H with a3 (max n (max (S a0) (S a3))) a1 a2 fn0; subst; eauto.
         { intros. destruct (name_eq_dec x a3); subst.
-          { zify. omega. }
-          { assert (x < n); eauto. zify. omega. } }
+          { lia. }
+          { assert (x < n); eauto. lia. } }
         { intros. destruct (name_eq_dec x a3); subst.
-          { zify. omega. }
-          { assert (x < n); eauto. zify. omega. } }
+          { lia. }
+          { assert (x < n); eauto. lia. } }
         { simpl. destruct (name_eq_dec a2 a2); subst.
           { reflexivity. }
           { contradiction. } }
@@ -602,9 +602,9 @@ Proof.
   { good_inversion CG. red in CB_FG.
     eapply den_sem_rename_var with (g1 := (b a1)) (n := max n (max (S a1) (S a2))); eauto.
     { intros. destruct (name_eq_dec x a1); subst.
-      { zify. omega. }
-      { assert (x < n); eauto. zify. omega. } }
+      { lia. }
+      { assert (x < n); eauto. lia. } }
     { intros. destruct (name_eq_dec x a2); subst.
-      { zify. omega. }
-      { assert (x < n); eauto. zify. omega. } } }
+      { lia. }
+      { assert (x < n); eauto. lia. } } }
 Qed.

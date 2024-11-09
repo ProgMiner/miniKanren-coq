@@ -111,7 +111,7 @@ eq_dec n =
                   S _ -> Right}) (\_ iHn m ->
     case m of {
      O -> Right;
-     S m0 -> iHn m0}) n
+     S n0 -> iHn n0}) n
 
 map :: (a1 -> a2) -> (List a1) -> List a2
 map f l =
@@ -208,26 +208,26 @@ unification_step t1 t2 =
 mgu_result_exists :: Term -> Term -> SigT (Option Subst) ()
 mgu_result_exists t1 t2 =
   let {
-   h = well_founded_induction (\x h ->
-         eq_rec_r __ (\h0 ->
+   h = well_founded_induction (\x x0 ->
+         eq_rec_r __ (\h ->
            case x of {
-            Pair t3 t4 ->
-             let {u = unification_step t3 t4} in
+            Pair t t0 ->
+             let {u = unification_step t t0} in
              case u of {
               NonUnifiable -> ExistT None __;
               Same -> ExistT (Some empty_subst) __;
-              VarSubst n t ->
+              VarSubst n t3 ->
                let {
-                h1 = h0 (Pair (apply_subst (singleton_subst n t) t3)
-                       (apply_subst (singleton_subst n t) t4))}
+                h0 = h (Pair (apply_subst (singleton_subst n t3) t)
+                       (apply_subst (singleton_subst n t3) t0))}
                in
-               let {h2 = h1 __} in
-               case h2 of {
-                ExistT x0 _ ->
-                 case x0 of {
-                  Some s -> ExistT (Some (compose (singleton_subst n t) s))
+               let {h1 = h0 __} in
+               case h1 of {
+                ExistT x1 _ ->
+                 case x1 of {
+                  Some s -> ExistT (Some (compose (singleton_subst n t3) s))
                    __;
-                  None -> ExistT None __}}}}) __ h) (Pair t1 t2)}
+                  None -> ExistT None __}}}}) __ x0) (Pair t1 t2)}
   in
   eq_rec_r __ (\h0 -> h0) __ h
 
@@ -294,31 +294,31 @@ eval_step_exists nst =
         case x of {
          Some s0 -> ExistT (Answer (compose s s0) n) (ExistT Stop __);
          None -> ExistT Step (ExistT Stop __)}};
-     Disj g1 g2 -> ExistT Step (ExistT (NTState (Sum (Leaf g1 s n) (Leaf g2 s
+     Disj g0 g1 -> ExistT Step (ExistT (NTState (Sum (Leaf g0 s n) (Leaf g1 s
       n))) __);
-     Conj g1 g2 -> ExistT Step (ExistT (NTState (Prod0 (Leaf g1 s n) g2)) __);
+     Conj g0 g1 -> ExistT Step (ExistT (NTState (Prod0 (Leaf g0 s n) g1)) __);
      Fresh g0 -> ExistT Step (ExistT (NTState (Leaf (g0 n) s (S n))) __);
      Invoke n0 t -> ExistT Step (ExistT (NTState (Leaf
       (proj1_sig (prog n0) t) s n)) __)}) (\_ iHnst1 nst2 _ ->
     case iHnst1 of {
-     ExistT l1 s ->
+     ExistT x s ->
       case s of {
-       ExistT st1 _ ->
-        case st1 of {
-         Stop -> ExistT l1 (ExistT (NTState nst2) __);
-         NTState n -> ExistT l1 (ExistT (NTState (Sum nst2 n)) __)}}})
+       ExistT x0 _ ->
+        case x0 of {
+         Stop -> ExistT x (ExistT (NTState nst2) __);
+         NTState n -> ExistT x (ExistT (NTState (Sum nst2 n)) __)}}})
     (\_ iHnst g ->
     case iHnst of {
-     ExistT l s ->
+     ExistT x s ->
       case s of {
-       ExistT st _ ->
-        case st of {
+       ExistT x0 _ ->
+        case x0 of {
          Stop ->
-          case l of {
+          case x of {
            Step -> ExistT Step (ExistT Stop __);
            Answer s0 n -> ExistT Step (ExistT (NTState (Leaf g s0 n)) __)};
          NTState n ->
-          case l of {
+          case x of {
            Step -> ExistT Step (ExistT (NTState (Prod0 n g)) __);
            Answer s0 n0 -> ExistT Step (ExistT (NTState (Sum (Leaf g s0 n0)
             (Prod0 n g))) __)}}}}) nst

@@ -2,7 +2,6 @@ Require Import List.
 Import ListNotations.
 Require Import Coq.Lists.ListSet.
 Require Import Arith.
-Require Import Omega.
 
 Require Import Unification.
 

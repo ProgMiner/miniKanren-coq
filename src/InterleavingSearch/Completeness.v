@@ -1,6 +1,6 @@
 Require Import List.
 Require Import Coq.Lists.ListSet.
-Require Import Omega.
+Require Import Lia.
 
 Require Import Unification.
 Require Import Streams.
@@ -71,7 +71,7 @@ Proof.
       { good_inversion WF.
         destruct (well_formed_subst_in_trace _ (wfNonTerminal _ wfst'1)  _ OP1 _ _ Hinstr').
         intros. constructor; auto. intros.
-        apply lt_le_trans with n; auto. }
+        apply PeanoNat.Nat.lt_le_trans with n; auto. }
       assert (Hg2' : in_denotational_sem_lev_goal (S l) g2 f').
       { apply closedness_condition_lev with f; auto. intros. apply ff'_eq.
         good_inversion WF. auto. }
@@ -83,7 +83,7 @@ Proof.
         constructor. eapply prod_op_sem_in; eauto. }
       { intros. red. apply eq_trans with (proj1_sig (f' x)).
         { apply ff'_eq. auto. }
-        { apply f'f''_eq. omega. } } }
+        { apply f'f''_eq. lia. } } }
     { good_inversion DSG. good_inversion OP. inversion EV; subst.
       apply well_formedness_preservation in EV; auto. good_inversion EV.
       rename fn into fa.
@@ -92,7 +92,7 @@ Proof.
                          else f x) as fn.
       assert (Hgn : [| S l | g n , fn |]).
       { good_inversion WF. apply den_sem_another_fresh_var with n a fa; auto.
-        { intro C. apply FV_LT_COUNTER in C. omega. }
+        { intro C. apply FV_LT_COUNTER in C. lia. }
         {  destruct (name_eq_dec n n); try contradiction. reflexivity. }
         { intros. destruct (name_eq_dec x n); try contradiction. auto. } }
       assert (DSSn : [ s , fn ]).
@@ -106,7 +106,7 @@ Proof.
           { simpl. destruct (image s n) eqn:eq; auto.
             good_inversion WF. assert (n < n).
             { apply DOM_LT_COUNTER. red. eauto. }
-            omega. }
+            lia. }
           rewrite e. rewrite H_n_is_fresh_2. simpl.
           destruct (name_eq_dec n n); try contradiction. auto. }
         { rewrite <- fssf'_eq. unfold subst_repr_fun_compose.
@@ -114,15 +114,15 @@ Proof.
           { apply apply_repr_fun_fv. intros. good_inversion WF.
             assert (in_subst_vran s x0). { red. eauto. }
             destruct (name_eq_dec x0 n); try reflexivity.
-            apply VRAN_LT_COUNTER in H1. omega. }
-          { simpl. destruct (name_eq_dec x n); auto. omega. } } }
+            apply VRAN_LT_COUNTER in H1. lia. }
+          { simpl. destruct (name_eq_dec x n); auto. lia. } } }
       specialize (H n fn s (S n) (CG_BODY n) Hgn DSSn wfState t0 OP0).
       destruct H as [f' [HinDA ff'_eq]]. exists f'. split.
       { red. red in HinDA. destruct HinDA as [s' [n' [Hinstr HDAS]]].
         exists s'. exists n'. split; auto. constructor; auto. }
-      { intros. assert (x < S n). { omega. }
+      { intros. assert (x < S n). { lia. }
         specialize (ff'_eq x H0). red in ff'_eq. red. rewrite <- ff'_eq.
-        rewrite Heqfn. destruct (name_eq_dec x n); try omega. reflexivity. } }
+        rewrite Heqfn. destruct (name_eq_dec x n); try lia. reflexivity. } }
     { good_inversion DSG. good_inversion OP. inversion EV; subst.
       apply well_formedness_preservation in EV; auto. good_inversion EV.
       assert (cg_body : consistent_goal (proj1_sig (Language.Prog n) t)).

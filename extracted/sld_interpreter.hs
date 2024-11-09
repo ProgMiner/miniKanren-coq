@@ -111,7 +111,7 @@ eq_dec n =
                   S _ -> Right}) (\_ iHn m ->
     case m of {
      O -> Right;
-     S m0 -> iHn m0}) n
+     S n0 -> iHn n0}) n
 
 map :: (a1 -> a2) -> (List a1) -> List a2
 map f l =
@@ -208,26 +208,26 @@ unification_step t1 t2 =
 mgu_result_exists :: Term -> Term -> SigT (Option Subst) ()
 mgu_result_exists t1 t2 =
   let {
-   h = well_founded_induction (\x h ->
-         eq_rec_r __ (\h0 ->
+   h = well_founded_induction (\x x0 ->
+         eq_rec_r __ (\h ->
            case x of {
-            Pair t3 t4 ->
-             let {u = unification_step t3 t4} in
+            Pair t t0 ->
+             let {u = unification_step t t0} in
              case u of {
               NonUnifiable -> ExistT None __;
               Same -> ExistT (Some empty_subst) __;
-              VarSubst n t ->
+              VarSubst n t3 ->
                let {
-                h1 = h0 (Pair (apply_subst (singleton_subst n t) t3)
-                       (apply_subst (singleton_subst n t) t4))}
+                h0 = h (Pair (apply_subst (singleton_subst n t3) t)
+                       (apply_subst (singleton_subst n t3) t0))}
                in
-               let {h2 = h1 __} in
-               case h2 of {
-                ExistT x0 _ ->
-                 case x0 of {
-                  Some s -> ExistT (Some (compose (singleton_subst n t) s))
+               let {h1 = h0 __} in
+               case h1 of {
+                ExistT x1 _ ->
+                 case x1 of {
+                  Some s -> ExistT (Some (compose (singleton_subst n t3) s))
                    __;
-                  None -> ExistT None __}}}}) __ h) (Pair t1 t2)}
+                  None -> ExistT None __}}}}) __ x0) (Pair t1 t2)}
   in
   eq_rec_r __ (\h0 -> h0) __ h
 
@@ -305,56 +305,56 @@ eval_step_exists nst =
          Some s0 -> ExistT (Answer (compose s s0) n) (ExistT NoCutting
           (ExistT Stop __));
          None -> ExistT Step (ExistT NoCutting (ExistT Stop __))}};
-     Disj g1 g2 -> ExistT Step (ExistT NoCutting (ExistT (NTState (Sum
-      StopCutting (Leaf g1 s n) (Leaf g2 s n))) __));
-     Conj g1 g2 -> ExistT Step (ExistT NoCutting (ExistT (NTState (Prod0
-      (Leaf g1 s n) g2)) __));
+     Disj g0 g1 -> ExistT Step (ExistT NoCutting (ExistT (NTState (Sum
+      StopCutting (Leaf g0 s n) (Leaf g1 s n))) __));
+     Conj g0 g1 -> ExistT Step (ExistT NoCutting (ExistT (NTState (Prod0
+      (Leaf g0 s n) g1)) __));
      Fresh g0 -> ExistT Step (ExistT NoCutting (ExistT (NTState (Leaf 
       (g0 n) s (S n))) __));
      Invoke n0 t -> ExistT Step (ExistT NoCutting (ExistT (NTState (Leaf
       (proj1_sig (prog n0) t) s n)) __))}) (\c _ iHnst1 nst2 _ ->
     case iHnst1 of {
-     ExistT l1 s ->
+     ExistT x s ->
       case s of {
-       ExistT cs s0 ->
+       ExistT x0 s0 ->
         case s0 of {
-         ExistT st1 _ ->
-          case st1 of {
+         ExistT x1 _ ->
+          case x1 of {
            Stop ->
-            case cs of {
-             NoCutting -> ExistT l1 (ExistT NoCutting (ExistT (NTState nst2)
+            case x0 of {
+             NoCutting -> ExistT x (ExistT NoCutting (ExistT (NTState nst2)
               __));
              YesCutting ->
               case c of {
-               StopCutting -> ExistT l1 (ExistT NoCutting (ExistT Stop __));
-               KeepCutting -> ExistT l1 (ExistT YesCutting (ExistT Stop __))}};
+               StopCutting -> ExistT x (ExistT NoCutting (ExistT Stop __));
+               KeepCutting -> ExistT x (ExistT YesCutting (ExistT Stop __))}};
            NTState n ->
-            case cs of {
-             NoCutting -> ExistT l1 (ExistT NoCutting (ExistT (NTState (Sum c
+            case x0 of {
+             NoCutting -> ExistT x (ExistT NoCutting (ExistT (NTState (Sum c
               n nst2)) __));
              YesCutting ->
               case c of {
-               StopCutting -> ExistT l1 (ExistT NoCutting (ExistT (NTState n)
+               StopCutting -> ExistT x (ExistT NoCutting (ExistT (NTState n)
                 __));
-               KeepCutting -> ExistT l1 (ExistT YesCutting (ExistT (NTState
-                n) __))}}}}}}) (\_ iHnst g ->
+               KeepCutting -> ExistT x (ExistT YesCutting (ExistT (NTState n)
+                __))}}}}}}) (\_ iHnst g ->
     case iHnst of {
-     ExistT l s ->
+     ExistT x s ->
       case s of {
-       ExistT cs s0 ->
+       ExistT x0 s0 ->
         case s0 of {
-         ExistT st _ ->
-          case st of {
+         ExistT x1 _ ->
+          case x1 of {
            Stop ->
-            case l of {
-             Step -> ExistT Step (ExistT cs (ExistT Stop __));
-             Answer s1 n -> ExistT Step (ExistT cs (ExistT (NTState (Leaf g
+            case x of {
+             Step -> ExistT Step (ExistT x0 (ExistT Stop __));
+             Answer s1 n -> ExistT Step (ExistT x0 (ExistT (NTState (Leaf g
               s1 n)) __))};
            NTState n ->
-            case l of {
-             Step -> ExistT Step (ExistT cs (ExistT (NTState (Prod0 n g))
+            case x of {
+             Step -> ExistT Step (ExistT x0 (ExistT (NTState (Prod0 n g))
               __));
-             Answer s1 n0 -> ExistT Step (ExistT cs (ExistT (NTState (Sum
+             Answer s1 n0 -> ExistT Step (ExistT x0 (ExistT (NTState (Sum
               KeepCutting (Leaf g s1 n0) (Prod0 n g))) __))}}}}}) nst
 
 type Trace = Stream Label

@@ -1,7 +1,7 @@
 Require Import List.
 Import ListNotations.
 Require Import Arith.
-Require Import Omega.
+Require Import Lia.
 Require Import Coq.Lists.ListSet.
 Require Export Coq.Structures.OrderedTypeEx.
 
@@ -66,20 +66,20 @@ Proof.
   assert (A : forall t, exists n, forall x, In x (fv_term t) -> S x <= n).
   { clear. induction t.
     { exists (S n). intros. destruct H.
-      { omega. }
+      { lia. }
       { contradiction. } }
     { exists 0. intros. contradiction. }
     { destruct IHt1 as [n1 IHt1]. destruct IHt2 as [n2 IHt2].
       exists (max n1 n2). intros. apply (set_union_elim name_eq_dec) in H.
       destruct H.
-      { eapply le_trans.
+      { eapply Nat.le_trans.
         { eapply IHt1. assumption. }
         { apply Nat.le_max_l. } }
-      { eapply le_trans.
+      { eapply Nat.le_trans.
         { eapply IHt2. assumption. }
         { apply Nat.le_max_r. } } } }
   specialize (A t). destruct A. exists x. intro C.
-  apply H in C. omega.
+  apply H in C. lia.
 Qed.
 
 Fixpoint height (t : term) : nat :=
@@ -446,7 +446,7 @@ Proof.
       { inversion H.
         { exfalso. subst. auto. }
         { apply in_or_app. right. auto. } } } }
-  rewrite app_length in LE_LEN. omega.
+  rewrite app_length in LE_LEN. lia.
 Qed.
 
 Lemma unification_step_decreases_fv
@@ -492,7 +492,7 @@ Proof.
   assert (fvOrder_wf': forall (size: nat) (t: terms), fvOrder t < size -> Acc fvOrderRel t).
   { unfold fvOrderRel. induction size.
     { intros. inversion H. }
-    { intros. constructor. intros. apply IHsize. omega. } }
+    { intros. constructor. intros. apply IHsize. lia. } }
   red; intro; eapply fvOrder_wf'; eauto.
 Defined.
 
@@ -714,9 +714,9 @@ Proof.
   { simpl in OCC. apply Nat.eqb_eq in OCC. subst. reflexivity. }
   { inversion OCC. }
   { simpl in OCC. apply Bool.orb_true_elim in OCC. destruct OCC.
-    { apply IHt1 in e. simpl. apply le_S. eapply le_trans.
+    { apply IHt1 in e. simpl. apply le_S. eapply Nat.le_trans.
       eassumption. apply Nat.le_max_l. }
-    { apply IHt2 in e. simpl. apply le_S. eapply le_trans.
+    { apply IHt2 in e. simpl. apply le_S. eapply Nat.le_trans.
       eassumption. apply Nat.le_max_r. } }
 Qed.
 
@@ -729,19 +729,19 @@ Lemma occurs_check_ground
       Var x = t.
 Proof.
   destruct t.
-  { simpl in OCC. apply beq_nat_true_iff in OCC. congruence. }
+  { simpl in OCC. apply Nat.eqb_eq in OCC. congruence. }
   { inversion OCC. }
   { exfalso. simpl in OCC. apply Bool.orb_true_elim in OCC. destruct OCC.
     { apply occurs_subst_height with (s := s) in e. rewrite APP_EQ in e.
-      simpl in e. apply le_lt_n_Sm in e. apply lt_S_n in e.
-      apply lt_irrefl with (height (apply_subst s t1)).
-      eapply le_lt_trans.
+      simpl in e. apply PeanoNat.le_lt_n_Sm in e. apply PeanoNat.lt_S_n in e.
+      apply Nat.lt_irrefl with (height (apply_subst s t1)).
+      eapply Nat.le_lt_trans.
       2: { eapply e. }
       apply Nat.le_max_l. }
     { apply occurs_subst_height with (s := s) in e. rewrite APP_EQ in e.
-      simpl in e. apply le_lt_n_Sm in e. apply lt_S_n in e.
-      apply lt_irrefl with (height (apply_subst s t2)).
-      eapply le_lt_trans.
+      simpl in e. apply PeanoNat.le_lt_n_Sm in e. apply PeanoNat.lt_S_n in e.
+      apply Nat.lt_irrefl with (height (apply_subst s t2)).
+      eapply Nat.le_lt_trans.
       2: { eapply e. }
       apply Nat.le_max_r. } }
 Qed.

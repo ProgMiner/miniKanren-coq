@@ -1,7 +1,7 @@
 Require Import List.
 Require Import Coq.Lists.ListSet.
 Import ListNotations.
-Require Import Omega.
+Require Import Lia.
 
 Require Import Unification.
 Require Import Streams.
@@ -65,7 +65,7 @@ Proof.
   { good_inversion WF. good_inversion DSST'.
     constructor; auto. econstructor; eauto.
     intros HIn. apply FV_LT_COUNTER in HIn.
-    { omega. }
+    { lia. }
     { reflexivity. } }
   { good_inversion DSST'. auto. }
   { auto. }
