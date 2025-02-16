@@ -1,1061 +1,1196 @@
 Require Import Eqdep_dec.
 Require Import PeanoNat.
+Require List.
+
+Require Import Util.Fin.
+
 Import EqNotations.
 
 
-Section Utils.
+#[local] Parameter F : Set.
+#[local] Parameter F_arity : F -> nat.
+#[local] Axiom F_eq_dec : forall (f g : F), {f = g} + {f <> g}.
 
-Definition gt_0_is_S {n} (p : n > 0) : { n' | n = S n' } :=
-match n as n' return n' > 0 -> { m | n' = S m } with
-| 0 => fun p => False_rec _ match p with end
-| S n => fun p => exist _ n eq_refl
-end p.
+#[local] Hint Resolve F_eq_dec : core.
 
-Fixpoint n_options (n : nat) (t : Set) : Set :=
-match n with
-| O => t
-| S n => option (n_options n t)
-end.
+#[local] Hint Resolve Nat.eq_dec : core.
 
-(*
-Fixpoint n_Somes {t : Set} (n : nat) (x : t) : n_options n t :=
-match n as n' return n_options n' t with
-| O => x
-| S n => Some (n_Somes n x)
-end.
-*)
+Record term_cons (T : Set) := TermCons
+  { term_cons_f : F
+  ; term_cons_ts : vec T (F_arity term_cons_f)
+  }.
 
-Definition fin n := n_options n False.
+Arguments TermCons {_} _ _.
+Arguments term_cons_f {_} _.
+Arguments term_cons_ts {_} _.
 
-Fixpoint fin_nat {n} (i : fin n) : nat :=
-match n, i with
-| 0, i => match i with end
-| S n, i =>
-  match i with
-  | None => 0
-  | Some i => S (fin_nat i)
-  end
-end.
-
-Lemma fin_nat_prop {n} {i : fin n} : fin_nat i < n.
-Proof.
-induction n. contradiction. destruct i as [ i | ].
-  * apply -> Nat.succ_lt_mono. apply IHn.
-  * apply Nat.lt_0_succ.
-Qed.
-
-Lemma fin_nat_inj {n} (i1 i2 : fin n) (p : fin_nat i1 = fin_nat i2) : i1 = i2.
-Proof.
-  induction n. contradiction.
-  destruct i1 as [ i1 | ]; destruct i2 as [ i2 | ]; inversion p; auto.
-  f_equal. apply IHn. auto.
-Qed.
-
-Lemma fin_nat_rew n m (i : fin n) (p : n = m) : fin_nat (rew [fin] p in i) = fin_nat i.
-Proof. destruct p. auto. Qed.
-
-Fixpoint nat_fin n i (p : i < n) : fin n :=
-match n as n', p return fin n' with
-| 0, p => False_rec _ (match p with end)
-| S n, p =>
-  match i as i' return i' < S n -> fin (S n) with
-  | 0 => fun _ => None
-  | S i => fun p => Some (nat_fin n i (PeanoNat.lt_S_n i n p))
-  end p
-end.
-
-Lemma nat_fin_irrelevance n i (p q : i < n) : nat_fin n i p = nat_fin n i q.
-Proof.
-  generalize dependent i. induction n; intros.
-  - inversion p.
-  - destruct i; auto. apply (f_equal Some). apply IHn.
-Qed.
-
-Lemma nat_fin_inj n i j (p : i < n) (q : j < n) (s : nat_fin n i p = nat_fin n j q) : i = j.
-Proof.
-  generalize dependent i. generalize dependent j.
-  induction n; intros. inversion p. destruct i; destruct j; inversion s. auto.
-  f_equal. unshelve eapply IHn; eauto.
-Qed.
-
-Lemma nat_fin_ext n i j (p : i < n) (q : j < n) (s : i = j) : nat_fin n i p = nat_fin n j q.
-Proof. generalize dependent p. rewrite s. intro. apply nat_fin_irrelevance. Qed.
-
-Lemma fin_nat_fin n (i : fin n) : nat_fin n (fin_nat i) fin_nat_prop = i.
-Proof.
-  induction n. contradiction. destruct i; auto.
-  simpl. f_equal. erewrite nat_fin_irrelevance. apply IHn.
-Qed.
-
-Lemma nat_fin_nat n i (p : i < n) : fin_nat (nat_fin n i p) = i.
-Proof.
-  generalize dependent i. induction n; intros. inversion p.
-  destruct i; auto. simpl. f_equal. apply IHn.
-Qed.
-
-Lemma fin_n_m {n m} (p : n = m) {x : fin n} {y : fin m} (q : rew p in x = y) : rew p in x = y.
-Proof. auto. Qed.
-
-Definition fin_0_0 {n m} (p : S n = S m) : rew [fin] p in (None : fin (S n)) = None :=
-match p with eq_refl => eq_refl end.
-
-Definition array (t : Set) n : Set := fin n -> t.
-
-(* dependent version requires funext :( *)
-Definition array_rec {t S : Set} (z : S) (s : t -> S -> S)
-                     : forall n, array t n -> S :=
-fix array_rec n :=
-  match n with
-  | 0 => fun _ => z
-  | S n => fun xs => s (xs None) (array_rec n (fun i => xs (Some i)))
-  end.
-
-Definition array_take {t} [n] i (p : i <= n) (xs : array t n) : array t i :=
-  fun j => xs (nat_fin n (fin_nat j) (Nat.lt_le_trans _ i n fin_nat_prop p)).
-
-Lemma array_take_irrelevance {t n} i (p q : i <= n) (xs : array t n) (j : fin i)
-                             : array_take i p xs j = array_take i q xs j.
-Proof. unfold array_take. f_equal. apply nat_fin_irrelevance. Qed.
-
-Definition in_array {t : Set} {n} (x : t) (xs : array t n) := exists i, xs i = x.
-
-End Utils.
-
-
-#[local] Parameter f : Set.
-
-Variant term_head (v t : Set) : Set :=
-| VarTH : v -> term_head v t
-| ConsTH : forall n, f -> array t n -> term_head v t
+Inductive simple_term (V : Set) : Set :=
+| VarST : V -> simple_term V
+| ConsST : term_cons (simple_term V) -> simple_term V
 .
 
-Unset Elimination Schemes.
-
-Inductive simple_term v : Set :=
-| SimpleTerm : term_head v (simple_term v) -> simple_term v
-.
-
-Set Elimination Schemes.
-
-CoInductive infinite_term v : Set := InfTerm { get_inf_term : term_head v (infinite_term v) }.
-
-Definition infinite_term_coind {v} (P : Set -> Prop)
-                               (inf_term : P v -> v + (f * { n & array (P v) n }))
-                               : P v -> infinite_term v :=
-cofix infinite_term_coind p :=
-  match inf_term p with
-  | inl x => InfTerm _ (VarTH _ _ x)
-  | inr (f, existT _ n ps) => InfTerm _ (ConsTH _ _ n f (fun i => infinite_term_coind (ps i)))
-  end.
+Arguments VarST {_} _.
+Arguments ConsST {_} _.
 
 Module InfiniteTerm.
 
-CoFixpoint map {v1 v2 : Set} (f : v1 -> v2) (t : infinite_term v1) : infinite_term v2 :=
-match t with
-| InfTerm _ (VarTH _ _ v) => InfTerm _ (VarTH _ _ (f v))
-| InfTerm _ (ConsTH _ _ n f' ts) => InfTerm _ (ConsTH _ _ n f' (fun i => map f (ts i)))
-end.
+Record cons (T : Set) := Cons
+  { cons_f : F
+  ; cons_ts : array T (F_arity cons_f)
+  }.
 
-CoInductive eq {v} : infinite_term v -> infinite_term v -> Prop :=
-| VarEq : forall x, eq (InfTerm _ (VarTH _ _ x)) (InfTerm _ (VarTH _ _ x))
-| ConsEq : forall n f (ts1 ts2 : array (infinite_term v) n),
-                  (forall (i : fin n), eq (ts1 i) (ts2 i))
-               -> eq (InfTerm _ (ConsTH _ _ n f ts1)) (InfTerm _ (ConsTH _ _ n f ts2))
+Arguments Cons {_} _ _.
+Arguments cons_f {_} _.
+Arguments cons_ts {_} _.
+
+Variant head (V T : Set) : Set :=
+| VarHead : V -> head V T
+| ConsHead : cons T -> head V T
 .
 
-CoFixpoint eq_refl {v} (t : infinite_term v) : eq t t :=
-match t as t' return eq t' t' with
-| InfTerm _ (VarTH _ _ x) => VarEq x
-| InfTerm _ (ConsTH _ _ n f ts) => ConsEq n f ts ts (fun i => eq_refl (ts i))
-end.
+Arguments VarHead {_ _} _.
+Arguments ConsHead {_ _} _.
 
-CoFixpoint eq_sym {v} {t1 t2 : infinite_term v} (p : eq t1 t2) : eq t2 t1 :=
-match p with
-| VarEq x => VarEq x
-| ConsEq n f ts1 ts2 p => ConsEq n f ts2 ts1 (fun i => eq_sym (p i))
-end.
+CoInductive term V : Set := Term { term_head : head V (term V) }.
 
-Inductive subterm {v} : infinite_term v -> infinite_term v -> Prop :=
-| ReflInfSubterm : forall t1 t2, eq t1 t2 -> subterm t1 t2
-| ConsInfSubterm : forall t1 t2 n f ts, subterm t1 t2 -> in_array t2 ts
-                -> subterm t1 (InfTerm _ (ConsTH _ _ n f ts))
-.
+Arguments Term {_} _.
 
-Definition step {v} (t : infinite_term v) : infinite_term v :=
-match t with InfTerm _ t => InfTerm _ t end.
+Definition step {V} (t : term V) : term V :=
+match t with Term t => Term t end.
 
-Lemma step_prop {v} (t : infinite_term v) : t = step t.
+Lemma step_prop {V} (t : term V) : t = step t.
 Proof. destruct t. reflexivity. Qed.
 
-CoFixpoint eq_map {v u : Set} (f : v -> u) (t1 t2 : infinite_term v) (H : eq t1 t2)
-                  : eq (map f t1) (map f t2) :=
-match H in eq t1 t2 with
-| VarEq x => rew <- [fun x => eq x x] step_prop (map f (InfTerm _ (VarTH _ _ x))) in VarEq (f x)
-| ConsEq n f' ts1 ts2 p =>
-  rew <- [fun x => eq x _] step_prop (map f (InfTerm _ (ConsTH _ _ n f' ts1))) in
-  rew <- [fun x => eq _ x] step_prop (map f (InfTerm _ (ConsTH _ _ n f' ts2))) in
-  ConsEq _ _ _ _ (fun i => eq_map f _ _ (p i))
+CoInductive eq {V} : term V -> term V -> Prop :=
+| VarEq : forall v, eq (Term (VarHead v)) (Term (VarHead v))
+| ConsEq : forall f (ts1 ts2 : array (term V) (F_arity f)), (forall i, eq (ts1 i) (ts2 i))
+               -> eq (Term (ConsHead (Cons f ts1))) (Term (ConsHead (Cons f ts2)))
+.
+
+CoFixpoint eq_refl {V} (t : term V) : eq t t :=
+match t as t' return eq t' t' with
+| Term (VarHead v) => VarEq v
+| Term (ConsHead (Cons f ts)) => ConsEq f ts ts (fun i => eq_refl (ts i))
 end.
+
+CoFixpoint eq_sym {V} {t1 t2 : term V} (p : eq t1 t2) : eq t2 t1 :=
+match p with
+| VarEq v => VarEq v
+| ConsEq f ts1 ts2 p => ConsEq f ts2 ts1 (fun i => eq_sym (p i))
+end.
+
+CoFixpoint eq_trans {V} {t1 t2 t3 : term V} (p : eq t1 t2) (q : eq t2 t3) : eq t1 t3.
+Proof.
+  refine (
+    match p in eq t1' t2' return eq t2' t3 -> eq t1' t3 with
+    | VarEq v => fun q =>
+      match q with
+      | VarEq _ => VarEq _
+      end
+    | ConsEq f ts1 ts2 p => fun q => _
+    end q
+  ).
+  inversion q. constructor. intro. apply inj_pair2_eq_dec in H1; auto. subst ts3.
+  eapply eq_trans; eauto.
+Defined.
+
+Instance eq_equivalence {V} : RelationClasses.Equivalence (eq (V:=V)) :=
+  RelationClasses.Build_Equivalence _ eq_refl (fun _ _ => eq_sym) (fun _ _ _ => eq_trans).
+
+CoFixpoint map {V U : Set} (h : V -> U) (t : term V) : term U :=
+match t with
+| Term (VarHead v) => Term (VarHead (h v))
+| Term (ConsHead (Cons f ts)) => Term (ConsHead (Cons f (fun i => map h (ts i))))
+end.
+
+Lemma map_cons {V U : Set} (h : V -> U) c : eq (map h (Term (ConsHead c)))
+                 (Term (ConsHead (Cons c.(cons_f) (fun i => map h (c.(cons_ts) i))))).
+Proof. destruct c as [ f ts ]. rewrite step_prop at 1. reflexivity. Qed.
+
+CoFixpoint map_eq {V U : Set} (h : V -> U) {t1 t2 : term V} (p : eq t1 t2)
+                  : eq (map h t1) (map h t2) :=
+rew <- [fun x => eq x _] step_prop (map h t1) in
+rew <- [fun x => eq _ x] step_prop (map h t2) in
+match p in eq t1' t2' return eq (step (map h t1')) (step (map h t2')) with
+| VarEq v => VarEq (h v)
+| ConsEq f ts1 ts2 p => ConsEq f _ _ (fun i => map_eq h (p i))
+end.
+
+CoFixpoint map_ext {V U : Set} [g h : V -> U] (p : forall v, g v = h v)
+                   (t : term V) : eq (map g t) (map h t) :=
+rew <- [fun x => eq x _] step_prop (map g t) in
+rew <- [fun x => eq _ x] step_prop (map h t) in
+match t as t' return eq (step (map g t')) (step (map h t')) with
+| Term (VarHead v) => rew [fun x => eq _ (Term (VarHead x))] p v in VarEq (g v)
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => map_ext p (ts i))
+end.
+
+CoFixpoint map_map {V U W : Set} (g : V -> U) (h : U -> W) (t : term V)
+       : eq (map h (map g t)) (map (fun x => h (g x)) t) :=
+rew <- [fun x => eq x _] step_prop (map h (map g t)) in
+rew <- [fun x => eq _ x] step_prop (map (fun x => h (g x)) t) in
+match t as t' return eq (step (map h (map g t'))) (step (map (fun x => h (g x)) t')) with
+| Term (VarHead v) => VarEq (h (g v))
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => map_map g h (ts i))
+end.
+
+Definition pure {V : Set} (v : V) : term V := Term (VarHead v).
+
+CoFixpoint bind {V U : Set} (k : V -> term U) (t : term V) : term U :=
+match t with
+| Term (VarHead v) => k v
+| Term (ConsHead (Cons f ts)) => Term (ConsHead (Cons f (fun i => bind k (ts i))))
+end.
+
+Lemma bind_cons {V U : Set} (k : V -> term U) c : eq (bind k (Term (ConsHead c)))
+                  (Term (ConsHead (Cons c.(cons_f) (fun i => bind k (c.(cons_ts) i))))).
+Proof. destruct c as [f ts]. rewrite step_prop at 1. reflexivity. Qed.
+
+CoFixpoint bind_eq {V U : Set} (k : V -> term U) {t1 t2} (p : eq t1 t2)
+                   : eq (bind k t1) (bind k t2) :=
+rew <- [fun x => eq x _] step_prop (bind k t1) in
+rew <- [fun x => eq _ x] step_prop (bind k t2) in
+match p in eq t1' t2' return eq (step (bind k t1')) (step (bind k t2')) with
+| VarEq v => eq_refl _
+| ConsEq f ts1 ts2 p => ConsEq f _ _ (fun i => bind_eq k (p i))
+end.
+
+CoFixpoint bind_ext {V U : Set} [k1 k2 : V -> term U] (p : forall v, eq (k1 v) (k2 v))
+               (t : term V) : eq (bind k1 t) (bind k2 t) :=
+rew <- [fun x => eq x _] step_prop (bind k1 t) in
+rew <- [fun x => eq _ x] step_prop (bind k2 t) in
+match t as t' return eq (step (bind k1 t')) (step (bind k2 t')) with
+| Term (VarHead v) =>
+  rew [fun x => eq x _] step_prop (k1 v) in
+  rew [fun x => eq _ x] step_prop (k2 v) in
+  p v
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => bind_ext p (ts i))
+end.
+
+Lemma pure_bind {V U : Set} (v : V) (k : V -> term U) : bind k (pure v) = k v.
+Proof. rewrite step_prop at 1. symmetry. apply (step_prop (k v)). Qed.
+
+CoFixpoint bind_pure {V : Set} (t : term V) : eq (bind pure t) t :=
+rew <- [fun x => eq x _] step_prop (bind pure t) in
+rew <- [fun x => eq _ x] step_prop t in
+match t as t' return eq (step (bind pure t')) (step t') with
+| Term (VarHead v) => VarEq v
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => bind_pure (ts i))
+end.
+
+CoFixpoint bind_map {V U W : Set} (k : U -> term W) (h : V -> U) (t : term V)
+                    : eq (bind k (map h t)) (bind (fun v => k (h v)) t) :=
+rew <- [fun x => eq x _] step_prop (bind k (map h t)) in
+rew <- [fun x => eq _ x] step_prop (bind (fun v => k (h v)) t) in
+match t as t' return eq (step (bind k (map h t'))) (step (bind (fun v => k (h v)) t')) with
+| Term (VarHead v) => eq_refl _
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => bind_map k h (ts i))
+end.
+
+CoFixpoint map_bind {V U W : Set} (h : U -> W) (k : V -> term U) (t : term V)
+                    : eq (map h (bind k t)) (bind (fun x => map h (k x)) t) :=
+rew <- [fun x => eq x _] step_prop (map h (bind k t)) in
+rew <- [fun x => eq _ x] step_prop (bind (fun v => map h (k v)) t) in
+match t as t' return eq (step (map h (bind k t'))) (step (bind (fun v => map h (k v)) t')) with
+| Term (VarHead v) => eq_refl _
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => map_bind h k (ts i))
+end.
+
+CoFixpoint bind_assoc {V U W : Set} (k1 : V -> term U) (k2 : U -> term W) (t : term V)
+                      : eq (bind k2 (bind k1 t)) (bind (fun x => bind k2 (k1 x)) t) :=
+rew <- [fun x => eq x _] step_prop (bind k2 (bind k1 t)) in
+rew <- [fun x => eq _ x] step_prop (bind (fun v => bind k2 (k1 v)) t) in
+match t as t' return eq (step (bind k2 (bind k1 t'))) (step (bind (fun v => bind k2 (k1 v)) t')) with
+| Term (VarHead v) => eq_refl _
+| Term (ConsHead (Cons f ts)) => ConsEq f _ _ (fun i => bind_assoc k1 k2 (ts i))
+end.
+
+Definition subst {V : Set} (t : term V) := bind (option_rec (fun _ => term V) pure t).
+
+Lemma subst_cons {V : Set} (t : term V) c : eq (subst t (Term (ConsHead c)))
+                   (Term (ConsHead (Cons c.(cons_f) (fun i => subst t (c.(cons_ts) i))))).
+Proof. apply bind_cons. Qed.
+
+Lemma subst_eq {V} (t : term V) {t1 t2} (p : eq t1 t2) : eq (subst t t1) (subst t t2).
+Proof. apply bind_eq. auto. Qed.
+
+Lemma subst_ext {V} {t1 t2 : term V} (p : eq t1 t2) t : eq (subst t1 t) (subst t2 t).
+Proof. apply bind_ext. intro. destruct v as [ v | ]. reflexivity. auto. Qed.
+
+Inductive path {V} : term V -> Set :=
+| HerePath : forall t, path t
+| ConsPath : forall c i, path (c.(cons_ts) i) -> path (Term (ConsHead c))
+| EqPath : forall {t1 t2}, eq t1 t2 -> path t1 -> path t2
+.
+
+Fixpoint at_path {V} {t : term V} (p : path t) : term V :=
+match p with
+| HerePath t => t
+| ConsPath _ _ p => at_path p
+| EqPath _ p => at_path p
+end.
+
+Lemma at_path_eq {V} {t1 t2 : term V} (H : eq t1 t2) (p : path t1)
+                 : eq (at_path p) (at_path (EqPath H p)).
+Proof. reflexivity. Qed.
+
+Definition is_subterm {V} (t1 t2 : term V) : Prop := exists (p : path t2), eq t1 (at_path p).
+
+Lemma is_subterm_eq_lhs {V} {t1 t1' t2 : term V} (p : eq t1 t1')
+                        (H : is_subterm t1 t2) : is_subterm t1' t2.
+Proof. destruct H. exists x. etransitivity; eauto. symmetry. auto. Qed.
+
+Lemma is_subterm_eq_rhs {V} {t1 t2 t2' : term V} (p : eq t2 t2')
+                        (H : is_subterm t1 t2) : is_subterm t1 t2'.
+Proof. destruct H. eexists. etransitivity. eauto. unshelve apply at_path_eq. auto. Qed.
+
+Definition is_regular {V} (t : term V) : Prop :=
+  exists (ts : list (term V)), List.Forall (fun t' => is_subterm t' t) ts
+  /\ forall t', is_subterm t' t -> List.Exists (eq t') ts.
+
+Definition regular_term V : Set := { t : term V | is_regular t }.
+
+Definition telescope := telescope term.
+
+Definition apply_telescope {V n} := Telescope.apply (fun V => subst (V:=V)) (V:=V) (n:=n).
+
+Lemma apply_telescope_eq {V n} (tsc : telescope V n) {t1 t2} (p : eq t1 t2)
+                         : eq (apply_telescope tsc t1) (apply_telescope tsc t2).
+Proof. induction tsc. auto. apply IHtsc. apply subst_eq. auto. Qed.
+
+Lemma apply_telescope_cons {V n} (tsc : telescope V n) {c}
+                           : eq (apply_telescope tsc (Term (ConsHead c)))
+                             (Term (ConsHead (Cons c.(cons_f) (fun i =>
+                               apply_telescope tsc (c.(cons_ts) i))))).
+Proof.
+  induction tsc; destruct c as [ f ts ]; cbn.
+  - constructor. intro. apply eq_refl.
+  - etransitivity; [ | apply (IHtsc (Cons f (fun i => subst t (ts i)))) ].
+    apply apply_telescope_eq. apply subst_cons.
+Qed.
+
+Inductive telescope_eq {V} : forall {n}, telescope V n -> telescope V n -> Prop :=
+| NilTE : telescope_eq NilTelescope NilTelescope
+| ConsTE {n : nat} {t1 t2 : term (n_options n V)} {tsc1 tsc2} : eq t1 t2 -> telescope_eq tsc1 tsc2
+                            -> telescope_eq (ConsTelescope t1 tsc1) (ConsTelescope t2 tsc2)
+.
+
+Lemma telescope_eq_refl {V n} (tsc : telescope V n) : telescope_eq tsc tsc.
+Proof. induction tsc; constructor. reflexivity. auto. Qed.
+
+Lemma telescope_eq_sym {V n} {tsc1 tsc2 : telescope V n} (p : telescope_eq tsc1 tsc2)
+                       : telescope_eq tsc2 tsc1.
+Proof. induction p; constructor. symmetry. auto. auto. Qed.
+
+Lemma telescope_eq_trans {V n} {tsc1 tsc2 tsc3 : telescope V n}
+                         (p : telescope_eq tsc1 tsc2) (q : telescope_eq tsc2 tsc3)
+                         : telescope_eq tsc1 tsc3.
+Proof.
+  induction p. auto. inversion q. subst n0. apply inj_pair2_eq_dec in H1; auto.
+  apply inj_pair2_eq_dec in H2; auto. apply inj_pair2_eq_dec in H3; auto. subst t0 tsc0 tsc3.
+  constructor. etransitivity; eauto. apply IHp. auto.
+Qed.
+
+Instance telescope_eq_equivalence {V n} : RelationClasses.Equivalence (telescope_eq (V:=V) (n:=n)) :=
+  RelationClasses.Build_Equivalence _ telescope_eq_refl (fun _ _ => telescope_eq_sym)
+    (fun _ _ _ => telescope_eq_trans).
+
+Lemma apply_telescope_ext {V n} {tsc1 tsc2 : telescope V n} (p : telescope_eq tsc1 tsc2)
+                          (t : term (n_options n V))
+                          : eq (apply_telescope tsc1 t) (apply_telescope tsc2 t).
+Proof.
+  induction p. reflexivity. etransitivity. apply IHp. cbn.
+  apply apply_telescope_eq. apply subst_ext. auto.
+Qed.
 
 Module Test.
 
-#[local] Parameter F : f.
-#[local] Parameter G : f.
+#[local] Parameter f : F.
+#[local] Parameter g : F.
+#[local] Axiom f_arity : F_arity f = 2.
 
-CoFixpoint test1 : infinite_term nat := InfTerm _ (ConsTH _ _ 1 F (fun _ => test1)).
+CoFixpoint test1 : term nat := Term (ConsHead (Cons f (fun _ => test1))).
 
-CoFixpoint test2 n : infinite_term nat :=
-  let xs := fun i =>
-    match i with
-    | None => InfTerm _ (VarTH _ _ n)
+CoFixpoint test2 n : term nat :=
+  let xs := fun (i : fin (F_arity f)) =>
+    match rew f_arity in i with
+    | None => Term (VarHead n)
     | Some _ => test2 (S n)
     end
-  in InfTerm _ (ConsTH _ _ 2 F xs).
+  in Term (ConsHead (Cons f xs)).
 
-CoFixpoint test3 : infinite_term False := InfTerm _ (ConsTH _ _ 1 F (fun _ => test3'))
-with test3' : infinite_term False := InfTerm _ (ConsTH _ _ 1 G (fun _ => test3)).
+CoFixpoint test3 : term False := Term (ConsHead (Cons f (fun _ => test3')))
+with test3' : term False := Term (ConsHead (Cons g (fun _ => test3))).
 
 End Test.
 
 End InfiniteTerm.
 
-Definition regular_term_p {v} (t : infinite_term v) : Prop :=
-exists n (ts : array (infinite_term v) n), (forall i, InfiniteTerm.subterm (ts i) t)
-/\ forall t', InfiniteTerm.subterm t' t -> exists i, InfiniteTerm.eq t' (ts i).
+Import (hints) InfiniteTerm.
 
-Definition regular_term v : Set := { t : infinite_term v | regular_term_p t }.
+Module MuTerm.
 
 Unset Elimination Schemes.
 
-Inductive mu_term v : Set :=
-| MuTerm : term_head v (mu_term v) -> mu_term v
-| MuBind : mu_term (option v) -> mu_term v
+Inductive term (V : Set) : Set :=
+| VarTerm : V -> term V
+| ConsTerm : term_cons (term V) -> term V
+| BindTerm : term (option V) -> term V
 .
 
 Set Elimination Schemes.
 
-Definition mu_term_ind (P : forall v, mu_term v -> Prop)
-                       (mu_term_var : forall v x, P v (MuTerm v (VarTH v _ x)))
-                       (mu_term_cons : forall v f n ts, (forall (i : fin n), P v (ts i))
-                                    -> P v (MuTerm v (ConsTH v _ n f ts)))
-                       (mu_term_bind : forall (v : Set) t, P (option v) t -> P v (MuBind v t))
-                       : forall v t, P v t :=
-fix mu_term_ind v t :=
-  match t as t return P v t with
-  | MuTerm _ (VarTH _ _ x) => mu_term_var _ x
-  | MuTerm _ (ConsTH _ _ n f ts) => mu_term_cons _ f n ts (fun i => mu_term_ind _ (ts i))
-  | MuBind _ t => mu_term_bind _ t (mu_term_ind _ _)
+Arguments VarTerm {_} _.
+Arguments ConsTerm {_} _.
+Arguments BindTerm {_} _.
+
+Definition term_ind (P : forall V, term V -> Prop)
+                    (var_term : forall V v, P V (VarTerm v))
+                    (cons_term : forall V f ts, (forall i, P V (Vec.v2a ts i))
+                              -> P V (ConsTerm (TermCons f ts)))
+                    (bind_term : forall (V : Set) t, P (option V) t -> P V (BindTerm t))
+                    : forall V t, P V t :=
+fix term_ind V t :=
+  match t as t' return P V t' with
+  | VarTerm v => var_term V v
+  | ConsTerm (TermCons f ts) =>
+    cons_term V f ts (Vec.v2a_dep (term_ind V) ts)
+  | BindTerm t => bind_term V t (term_ind (option V) t)
   end.
 
-Definition mu_term_rec (S : forall v, mu_term v -> Set)
-                       (mu_term_var : forall v x, S v (MuTerm v (VarTH v _ x)))
-                       (mu_term_cons : forall v f n ts, (forall (i : fin n), S v (ts i))
-                                    -> S v (MuTerm v (ConsTH v _ n f ts)))
-                       (mu_term_bind : forall (v : Set) t, S (option v) t -> S v (MuBind v t))
-                       : forall v t, S v t :=
-fix mu_term_rec v t :=
-  match t as t return S v t with
-  | MuTerm _ (VarTH _ _ x) => mu_term_var _ x
-  | MuTerm _ (ConsTH _ _ n f ts) => mu_term_cons _ f n ts (fun i => mu_term_rec _ (ts i))
-  | MuBind _ t => mu_term_bind _ t (mu_term_rec _ _)
-  end.
-
-Definition mu_term_rect (S : forall v, mu_term v -> Type)
-                        (mu_term_var : forall v x, S v (MuTerm v (VarTH v _ x)))
-                        (mu_term_cons : forall v f n ts, (forall (i : fin n), S v (ts i))
-                                     -> S v (MuTerm v (ConsTH v _ n f ts)))
-                        (mu_term_bind : forall (v : Set) t, S (option v) t -> S v (MuBind v t))
-                        : forall v t, S v t :=
-fix mu_term_rect v t :=
-  match t as t return S v t with
-  | MuTerm _ (VarTH _ _ x) => mu_term_var _ x
-  | MuTerm _ (ConsTH _ _ n f ts) => mu_term_cons _ f n ts (fun i => mu_term_rect _ (ts i))
-  | MuBind _ t => mu_term_bind _ t (mu_term_rect _ _)
-  end.
-
-Module MuTerm.
-
-Definition pure {v : Set} (x : v) : mu_term v := MuTerm _ (VarTH _ _ x).
-
-Fixpoint map {v u : Set} (f : v -> u) (t : mu_term v) : mu_term u :=
+Fixpoint depth {V} (t : term V) : nat :=
 match t with
-| MuTerm _ (VarTH _ _ x) => MuTerm _ (VarTH _ _ (f x))
-| MuTerm _ (ConsTH _ _ n f' ts) => MuTerm _ (ConsTH _ _ n f' (fun i => map f (ts i)))
-| MuBind _ t => MuBind _ (map (option_map f) t)
+| VarTerm _ => 1
+| ConsTerm (TermCons _ ts) => S (List.list_max (Vec.to_list (Vec.map depth ts)))
+| BindTerm t => 1 + depth t
 end.
 
-Fixpoint bind {v u : Set} (k : v -> mu_term u) (t : mu_term v) : mu_term u :=
+Fixpoint map {V U : Set} (h : V -> U) (t : term V) : term U :=
 match t with
-| MuTerm _ (VarTH _ _ x) => k x
-| MuTerm _ (ConsTH _ _ n f ts) => MuTerm _ (ConsTH _ _ n f (fun i => bind k (ts i)))
-| MuBind _ t =>
-  let k' x :=
-    match x with
-    | None => MuTerm _ (VarTH _ _ None)
-    | Some x => map Some (k x)
-    end
-  in MuBind _ (bind k' t)
+| VarTerm x => VarTerm (h x)
+| ConsTerm (TermCons f ts) => ConsTerm (TermCons f (Vec.map (map h) ts))
+| BindTerm t => BindTerm (map (option_map h) t)
 end.
 
-Inductive wf {v} : mu_term v -> Prop :=
-| VarWF : forall x, wf (MuTerm _ (VarTH _ _ x))
-| ConsWF : forall f n ts, (forall (i : fin n), wf (ts i)) -> wf (MuTerm _ (ConsTH _ _ n f ts))
-| BindWF : forall n f ts, wf (MuTerm _ (ConsTH _ _ n f ts))
-          -> wf (MuBind _ (MuTerm _ (ConsTH _ _ n f ts)))
+Lemma map_ext {V U : Set} [g h : V -> U] (p : forall v, g v = h v)
+              (t : term V) : map g t = map h t.
+Proof.
+  generalize dependent U. induction t; intros; simpl; f_equal. auto.
+  - f_equal. apply Vec.map_ext. auto.
+  - apply IHt. intro. destruct v; auto. simpl. f_equal. apply p.
+Qed.
+
+Lemma map_map {V U W : Set} (g : V -> U) (h : U -> W) (t : term V)
+              : map h (map g t) = map (fun x => h (g x)) t.
+Proof.
+  generalize dependent W. generalize dependent U. induction t; intros; simpl. auto.
+  - f_equal. f_equal. rewrite Vec.map_map. apply Vec.map_ext. auto.
+  - f_equal. etransitivity. apply IHt. apply map_ext. intro. destruct v; auto.
+Qed.
+
+Definition pure {V : Set} (x : V) : term V := VarTerm x.
+
+Definition bind_bind_k {V U : Set} (k : V -> term U) (v : option V) : term (option U) :=
+match v with
+| None => VarTerm None
+| Some v => map Some (k v)
+end.
+
+Fixpoint bind {V U : Set} (k : V -> term U) (t : term V) : term U :=
+match t with
+| VarTerm v => k v
+| ConsTerm (TermCons f ts) => ConsTerm (TermCons f (Vec.map (bind k) ts))
+| BindTerm t => BindTerm (bind (bind_bind_k k) t)
+end.
+
+Lemma bind_ext {V U : Set} [k1 k2 : V -> term U] (p : forall v, k1 v = k2 v)
+               (t : term V) : bind k1 t = bind k2 t.
+Proof.
+  generalize dependent U. induction t; intros; simpl. auto.
+  - f_equal. f_equal. apply Vec.map_ext. auto.
+  - f_equal. apply IHt. intro. destruct v; auto. simpl. rewrite p. auto.
+Qed.
+
+Lemma pure_bind {V U : Set} (v : V) (k : V -> term U) : bind k (pure v) = k v.
+Proof. auto. Qed.
+
+Lemma bind_pure {V : Set} (t : term V) : bind pure t = t.
+Proof.
+  induction t; simpl. auto.
+  - f_equal. f_equal. etransitivity; [ | apply Vec.map_id ]. apply Vec.map_ext. auto.
+  - f_equal. etransitivity; [ | apply IHt ]. apply bind_ext. intro. destruct v; auto.
+Qed.
+
+Lemma bind_map {V U W : Set} (k : U -> term W) (h : V -> U) (t : term V)
+               : bind k (map h t) = bind (fun v => k (h v)) t.
+Proof.
+  generalize dependent W. generalize dependent U. induction t; intros; simpl. auto.
+  - f_equal. f_equal. rewrite Vec.map_map. apply Vec.map_ext. auto.
+  - f_equal. etransitivity. apply IHt. apply bind_ext. intro. destruct v; auto.
+Qed.
+
+Lemma map_bind {V U W : Set} (h : U -> W) (k : V -> term U) (t : term V)
+               : map h (bind k t) = bind (fun x => map h (k x)) t.
+Proof.
+  generalize dependent W. generalize dependent U. induction t; intros; simpl. auto.
+  - f_equal. f_equal. rewrite Vec.map_map. apply Vec.map_ext. auto.
+  - f_equal. etransitivity. apply IHt. apply bind_ext.
+    intro. destruct v; auto. simpl. etransitivity. apply map_map. symmetry.
+    etransitivity. apply map_map. apply map_ext. auto.
+Qed.
+
+Lemma bind_assoc {V U W : Set} (k1 : V -> term U) (k2 : U -> term W) (t : term V)
+                 : bind k2 (bind k1 t) = bind (fun x => bind k2 (k1 x)) t.
+Proof.
+  generalize dependent W. generalize dependent U. induction t; intros; simpl. auto.
+  - f_equal. f_equal. rewrite Vec.map_map. apply Vec.map_ext. auto.
+  - f_equal. etransitivity. apply IHt. apply bind_ext. intro. destruct v; auto. simpl.
+    rewrite bind_map. rewrite map_bind. apply bind_ext. eauto.
+Qed.
+
+Lemma map_as_bind {V U : Set} (h : V -> U) (t : term V) : map h t = bind (fun v => pure (h v)) t.
+Proof. etransitivity. symmetry. apply bind_pure. apply bind_map. Qed.
+
+Definition subst {V : Set} (t : term V) := bind (option_rec (fun _ => term V) pure t).
+
+Inductive wf {V} : term V -> Prop :=
+| VarWF : forall v, wf (VarTerm v)
+| ConsWF : forall c, (forall i, wf (Vec.v2a c.(term_cons_ts) i)) -> wf (ConsTerm c)
+| BindWF : forall c, wf (ConsTerm c) -> wf (BindTerm (ConsTerm c))
 .
 
-Lemma wf_cons_list {v f n} {ts : array (mu_term v) n}
-                   (twf : wf (MuTerm v (ConsTH _ _ n f ts)))
-                   : forall (i : fin n), wf (ts i).
-Proof. inversion twf. apply inj_pair2_eq_dec in H2. rewrite H2 in H0. auto. apply Nat.eq_dec. Qed.
+Lemma wf_cons_subterm {V} {c : term_cons (term V)} (twf : wf (ConsTerm c)) (i : fin _)
+                      : wf (Vec.v2a c.(term_cons_ts) i).
+Proof. inversion twf. apply H0. Qed.
 
-Lemma wf_bind_nested {v t} (twf : wf (MuBind v t)) : wf t.
+Lemma wf_bind_nested {V : Set} {t : term (option V)} (twf : wf (BindTerm t)) : wf t.
 Proof. inversion_clear twf. auto. Qed.
 
-Lemma no_bind_var {v x} (twf : wf (MuBind v (MuTerm _ (VarTH _ _ x)))) : False.
-Proof. inversion_clear twf. Qed.
-
-Lemma no_bind_bind {v t} (twf : wf (MuBind v (MuBind _ t))) : False.
-Proof. inversion_clear twf. Qed.
-
-Lemma wf_map {v u : Set} {t} (f : v -> u) (twf : wf t) : wf (map f t).
+Lemma map_wf {V U : Set} {t} (h : V -> U) (twf : wf t) : wf (map h t).
 Proof.
-  generalize dependent u. induction twf; auto; constructor.
-  - intro. apply H0.
-  - apply IHtwf.
+  generalize dependent U. induction twf; intros. constructor.
+  - destruct c. constructor. intro. rewrite Vec.map_prop. simpl. rewrite Vec.array_vec_array. auto.
+  - destruct c as [ f ts ]. constructor. apply IHtwf.
 Qed.
 
-Lemma wf_bind {v u} {t : mu_term v} (twf : wf t)
-              (k : v -> mu_term u) (twfs : forall (x : v), wf (k x))
-              : wf (bind k t).
+Lemma bind_wf {V U : Set} {t} [k : V -> term U] (twfs : forall v, wf (k v))
+              (twf : wf t) : wf (bind k t).
 Proof.
-  generalize dependent u. induction twf; intros; simpl.
-  - apply twfs.
-  - constructor. intro. apply H0. auto.
-  - specialize (IHtwf _ (fun x =>
-      match x with Some x => map Some (k x) | None => MuTerm _ (VarTH _ _ None) end)).
-    constructor. apply IHtwf. intro. destruct x.
-    + apply wf_map. auto.
-    + constructor.
+  generalize dependent U. induction twf; intros; simpl. auto.
+  - destruct c. constructor. intro. rewrite Vec.map_prop. simpl. rewrite Vec.array_vec_array. auto.
+  - destruct c as [ f ts ]. constructor. apply IHtwf. intro.
+    destruct v. apply map_wf. auto. constructor.
 Qed.
 
-Definition one_unfold_k {v : Set} (t : mu_term (option v)) (x : option v) :=
-match x with
-| None => MuBind _ t
-| Some x => MuTerm _ (VarTH _ _ x)
-end.
+Corollary subst_wf {V} {t1 : term V} {t2} (twf1 : wf t1) (twf2 : wf t2) : wf (subst t1 t2).
+Proof. apply bind_wf; auto. intro. destruct v; auto. simpl. constructor. Qed.
 
-Lemma wf_one_unfold_not_bind {v : Set} {t t' : mu_term (option v)} (twf : wf (MuBind _ t))
-                             : bind (one_unfold_k t) t <> MuBind _ t'.
-Proof. inversion twf. intro. inversion H1. Qed.
+Definition one_unfold {V : Set} (t : term (option V)) := subst (BindTerm t) t.
 
-Corollary wf_one_unfold_wf {v : Set} {t : mu_term (option v)}
-                           (twf : wf (MuBind _ t)) : wf (bind (one_unfold_k t) t).
-Proof. apply wf_bind. apply wf_bind_nested. auto. intro. destruct x; auto. constructor. Qed.
+Corollary wf_one_unfold_wf {V : Set} {t : term (option V)} (twf : wf (BindTerm t))
+                           : wf (one_unfold t).
+Proof. apply subst_wf; auto. apply wf_bind_nested. auto. Qed.
 
-CoFixpoint unfold {v} (t : mu_term v) (twf : wf t) : infinite_term v :=
-match t, twf with
-| MuTerm _ (VarTH _ _ v), _ => InfTerm _ (VarTH _ _ v)
-| MuTerm _ (ConsTH _ _ n f ts), twf =>
-  let twfs := wf_cons_list twf
-  in InfTerm _ (ConsTH _ _ n f (fun i => unfold (ts i) (twfs i)))
-| MuBind _ t', twf =>
-  match bind (one_unfold_k t') t' as t''
-  return bind (one_unfold_k t') t' = t'' -> wf t'' -> infinite_term v with
-  | MuTerm _ (VarTH _ _ v) => fun _ _ => InfTerm _ (VarTH _ _ v)
-  | MuTerm _ (ConsTH _ _ n f ts) => fun _ twf =>
-    let twfs : forall (i : fin n), wf (ts i) := wf_cons_list twf
-    in InfTerm _ (ConsTH _ _ n f (fun i => unfold (ts i) (twfs i)))
-  | MuBind _ t'' => fun p _ => False_rec _ (wf_one_unfold_not_bind twf p)
-  end eq_refl (wf_one_unfold_wf twf)
-end.
+Lemma wf_one_unfold_not_bind {V : Set} {t t' : term (option V)} (twf : wf (BindTerm t))
+                             : one_unfold t <> BindTerm t'.
+Proof. inversion twf. intro. destruct c. inversion H1. Qed.
 
-(*
-(* not working *)
+Definition unfold_hlp {V} (unfold : forall (t : term V), wf t -> InfiniteTerm.term V)
+                      (t : term (option V)) (twf : wf (BindTerm t))
+                      (t' : term V) (p : one_unfold t = t') (twf' : wf t')
+                      : InfiniteTerm.term V :=
+match t' as t'' return one_unfold t = t'' -> wf t'' -> _ with
+| VarTerm v => fun _ _ => InfiniteTerm.Term (InfiniteTerm.VarHead v)
+| ConsTerm (TermCons f ts) => fun _ twf =>
+  InfiniteTerm.Term (InfiniteTerm.ConsHead (InfiniteTerm.Cons f
+    (fun i => unfold (Vec.v2a ts i) (wf_cons_subterm twf i))))
+| BindTerm t => fun p _ => False_rec _ (wf_one_unfold_not_bind twf p)
+end p twf'.
 
-Definition resolve_var {v n} (t : array (infinite_term v) n) (x : n_options n v) : infinite_term v.
-Admitted.
+CoFixpoint unfold {V} (t : term V) (twf : wf t) : InfiniteTerm.term V :=
+match t as t' return wf t' -> _ with
+| VarTerm v => fun _ => InfiniteTerm.Term (InfiniteTerm.VarHead v)
+| ConsTerm (TermCons f ts) => fun twf =>
+  InfiniteTerm.Term (InfiniteTerm.ConsHead (InfiniteTerm.Cons f
+    (fun i => unfold (Vec.v2a ts i) (wf_cons_subterm twf i))))
+| BindTerm t => fun twf => unfold_hlp unfold t twf (one_unfold t) eq_refl (wf_one_unfold_wf twf)
+end twf.
 
-CoFixpoint unfold_mu_term_aux {v} n (t : mu_term (n_options n v)) (twf : wf t)
-                              (ctx : array (infinite_term v) n) : infinite_term v :=
-match t, twf with
-| MuTerm _ (VarTH _ _ x), _ => resolve_var ctx x
-| MuTerm _ (ConsTH _ _ n' f ts), twf =>
-  InfTerm _ (ConsTH _ _ n' f (fun i => unfold_mu_term_aux n (ts i) (wf_cons_list twf i) ctx))
-| MuBind _ (MuTerm _ (VarTH _ _ _)), twf => False_rec _ (no_bind_var twf)
-| MuBind _ (MuTerm _ (ConsTH _ _ n' f ts)), twf =>
-  let twfs := wf_cons_list (wf_bind_nested twf)
-  in cofix this := InfTerm v (ConsTH v _ n' f (fun (i : fin n') =>
-    unfold_mu_term_aux (S n) (ts i) (twfs i) (fun (i : fin (S n)) =>
-      match i with None => this | Some i => ctx i end)))
-| MuBind _ (MuBind _ t), twf => False_rec _ (no_bind_bind twf)
-end.
-*)
+CoFixpoint unfold_irrelevance {V} {t : term V} (twf1 twf2 : wf t)
+                              : InfiniteTerm.eq (unfold t twf1) (unfold t twf2) :=
+rew <- [fun x => InfiniteTerm.eq x _] InfiniteTerm.step_prop (unfold t twf1) in
+rew <- [fun x => InfiniteTerm.eq _ x] InfiniteTerm.step_prop (unfold t twf2) in
+match t as t' return forall (twf1 twf2 : wf t'),
+  InfiniteTerm.eq (InfiniteTerm.step (unfold t' twf1)) (InfiniteTerm.step (unfold t' twf2))
+with
+| VarTerm v => fun _ _ => InfiniteTerm.VarEq v
+| ConsTerm (TermCons f ts) => fun twf1 twf2 =>
+  InfiniteTerm.ConsEq f _ _ (fun i => unfold_irrelevance _ _)
+| BindTerm t => fun twf1 twf2 =>
+  rew [fun x => InfiniteTerm.eq x _] InfiniteTerm.step_prop (unfold_hlp unfold t twf1 _ _ _) in
+  rew [fun x => InfiniteTerm.eq _ x] InfiniteTerm.step_prop (unfold_hlp unfold t twf2 _ _ _) in
+  match one_unfold t as t' return forall (p : one_unfold t = t') (twf1' twf2' : wf t'),
+    InfiniteTerm.eq (unfold_hlp unfold t twf1 t' p twf1') (unfold_hlp unfold t twf2 t' p twf2')
+  with
+  | VarTerm v => fun _ _ _ => InfiniteTerm.VarEq v
+  | ConsTerm (TermCons f ts) => fun _ twf1 twf2 =>
+    InfiniteTerm.ConsEq f _ _ (fun i => unfold_irrelevance _ _)
+  | BindTerm t => fun p _ _ => False_ind _ (wf_one_unfold_not_bind twf1 p)
+  end eq_refl (wf_one_unfold_wf twf1) (wf_one_unfold_wf twf2)
+end twf1 twf2.
 
-Definition array_sum {n} (xs : array nat n) : nat := array_rec 0 (fun x acc => x + acc) n xs.
+Lemma unfold_ext {V} {t1 t2 : term V} (twf1 : wf t1) (twf2 : wf t2) (p : t1 = t2)
+                 : InfiniteTerm.eq (unfold t1 twf1) (unfold t2 twf2).
+Proof. generalize dependent twf1. rewrite p. intro. apply unfold_irrelevance. Qed.
 
-Lemma array_sum_ext {n} (xs ys : array nat n) (p : forall i, xs i = ys i)
-                    : array_sum xs = array_sum ys.
-Proof. induction n. auto. simpl. f_equal; auto. Qed.
+CoFixpoint unfold_bind {V U : Set} [k : V -> term U] (twfs : forall v, wf (k v))
+                       {t : term V} (twf : wf t) (twf' : wf (bind k t))
+                       : InfiniteTerm.eq (InfiniteTerm.bind (fun v => unfold (k v) (twfs v)) (unfold t twf))
+                         (unfold (bind k t) twf') :=
+rew <- [fun x => InfiniteTerm.eq x _] InfiniteTerm.step_prop (InfiniteTerm.bind _ (unfold t twf)) in
+rew <- [fun x => InfiniteTerm.eq _ x] InfiniteTerm.step_prop (unfold _ _) in
+match t as t' return forall (twf : wf t') (twf' : wf (bind k t')),
+  InfiniteTerm.eq (InfiniteTerm.step (InfiniteTerm.bind (fun v => unfold (k v) (twfs v)) (unfold t' twf)))
+    (InfiniteTerm.step (unfold (bind k t') twf'))
+with
+| VarTerm v => fun twf twf' =>
+  rew [fun x => InfiniteTerm.eq x _] InfiniteTerm.step_prop (unfold (k v) _) in
+  rew [fun x => InfiniteTerm.eq _ x] InfiniteTerm.step_prop (unfold (k v) _) in
+  unfold_irrelevance (twfs v) twf'
+| ConsTerm (TermCons f ts) => fun twf twf' =>
+  InfiniteTerm.ConsEq f _ _ (fun i =>
+    (
+      rew <- [fun x => forall (twf'' : wf (Vec.v2a x i)), InfiniteTerm.eq _ (unfold _ twf'')]
+        Vec.map_prop (bind _) _
+      in
+      rew <- [fun x => forall (twf'' : wf x), InfiniteTerm.eq _ (unfold _ twf'')]
+        Vec.array_vec_array _ i
+      in
+      unfold_bind twfs (wf_cons_subterm twf i)
+    ) (wf_cons_subterm twf' i)
+  )
+| BindTerm t =>
+  match t as t' return forall (twf : wf (BindTerm t')) (twf' : wf (bind k (BindTerm t'))), _ with
+  | VarTerm _ => fun twf _ => False_rec _ match twf with end
+  | ConsTerm (TermCons f ts) => fun twf twf' =>
+    InfiniteTerm.ConsEq f _ _ (fun i =>
+      (
+        rew <- [fun x =>
+          forall (twf1 : wf (Vec.v2a x i)) twf2,
+          InfiniteTerm.eq (InfiniteTerm.bind _ (unfold _ twf1)) _
+        ] Vec.map_prop _ _ in
+        rew <- [fun x =>
+          forall (twf1 : wf x) twf2,
+          InfiniteTerm.eq (InfiniteTerm.bind _ (unfold _ twf1)) _
+        ] Vec.array_vec_array _ i in
+        rew <- [fun x => forall twf1 (twf2 : wf (Vec.v2a x i)), InfiniteTerm.eq _ (unfold _ twf2)]
+          Vec.map_prop _ _
+        in
+        rew <- [fun x => forall twf1 (twf2 : wf x), InfiniteTerm.eq _ (unfold _ twf2)]
+          Vec.array_vec_array _ i
+        in
+        rew <- [fun x =>
+          forall twf1 (twf2 : wf (bind _ (Vec.v2a x i))), InfiniteTerm.eq _ (unfold _ twf2)
+        ] Vec.map_prop _ _ in
+        rew <- [fun x => forall twf1 (twf2 : wf (bind _ x)), InfiniteTerm.eq _ (unfold _ twf2)]
+          Vec.array_vec_array _ i
+        in
+        rew <- [fun x => forall twf1 (twf2 : wf x), InfiniteTerm.eq _ (unfold _ twf2)]
+          bind_assoc _ _ _
+        in
+        rew <- [fun x => forall twf1 (twf2 : wf x), InfiniteTerm.eq _ (unfold _ twf2)]
+          bind_ext (fun v =>
+            match v as v' return bind _ (bind_bind_k k v') = bind k (option_rec _ pure _ v') with
+            | None => eq_refl
+            | Some v => eq_trans (bind_map _ _ _) (bind_pure _)
+            end
+          ) _
+        in
+        rew [fun x => forall twf1 (twf2 : wf x), InfiniteTerm.eq _ (unfold _ twf2)]
+          bind_assoc _ _ _
+        in
+        unfold_bind twfs
+      ) (wf_cons_subterm (wf_one_unfold_wf twf) i) (wf_cons_subterm (wf_one_unfold_wf twf') i)
+    )
+  | BindTerm _ => fun twf _ => False_rec _ match twf with end
+  end
+end twf twf'.
 
-Lemma array_sum_take_step {n} (i : fin n) (xs : array nat n)
-  : array_sum (array_take (fin_nat i) (Nat.lt_le_incl _ _ fin_nat_prop) xs) + xs i
-    = array_sum (array_take (S (fin_nat i)) fin_nat_prop xs).
+Corollary unfold_subst {V : Set} {t1 : term V} {t2} (twf1 : wf t1) (twf2 : wf t2)
+                       : InfiniteTerm.eq (InfiniteTerm.subst (unfold t1 twf1) (unfold t2 twf2))
+                         (unfold (subst t1 t2) (subst_wf twf1 twf2)).
 Proof.
-  induction n. contradiction. destruct i as [ i | ].
-  - specialize (IHn i (fun i => xs (Some i))). simpl in *.
-    rewrite <- Nat.add_assoc. f_equal.
-    etransitivity. 2: etransitivity. 2: apply IHn.
-    * f_equal. eapply array_sum_ext. intro j. unfold array_take. simpl.
-      f_equal. f_equal. apply nat_fin_irrelevance.
-    * f_equal.
-      + unfold array_take. simpl. f_equal. f_equal. apply nat_fin_irrelevance.
-      + unfold array_take. simpl. apply array_sum_ext. intro.
-        f_equal. f_equal. apply nat_fin_irrelevance.
-  - simpl. rewrite Nat.add_comm. auto.
+  etransitivity.
+  2: unshelve apply unfold_bind; auto; destruct v; auto; constructor.
+  apply InfiniteTerm.bind_ext. intro. destruct v; [ | reflexivity ].
+  rewrite InfiniteTerm.step_prop at 1. rewrite InfiniteTerm.step_prop. reflexivity.
 Qed.
 
-Lemma array_sum_take_le {n} (xs : array nat n) (i : nat) (p : i <= n)
-                       : array_sum (array_take i p xs) <= array_sum xs.
+Lemma unfold_bind_term {V : Set} {t : term (option V)} (twf : wf (BindTerm t))
+                       : InfiniteTerm.eq (unfold (BindTerm t) twf) (unfold (subst (BindTerm t) t)
+                         (subst_wf twf (wf_bind_nested twf))).
 Proof.
-  generalize dependent i. induction n.
-  - intros. destruct i; inversion p. auto.
-  - intros. destruct i as [ i | ]. apply Nat.le_0_l.
-    simpl. apply Nat.add_le_mono_l. specialize (IHn (fun i => xs (Some i)) i).
-    specialize (le_S_n _ _ p). intro. specialize (IHn H).
-    erewrite array_sum_ext. apply IHn. intro j. unfold array_take. simpl.
-    f_equal. f_equal. apply nat_fin_irrelevance.
+  generalize (subst_wf twf (wf_bind_nested twf)) as twf'. remember (subst (BindTerm t) t) as t'.
+  intro. rewrite InfiniteTerm.step_prop at 1. rewrite InfiniteTerm.step_prop.
+  destruct t'; destruct t; inversion twf; subst t; destruct c as [ f ts ]; inversion Heqt'.
+  subst t0. constructor. intro. apply unfold_irrelevance.
 Qed.
 
-Fixpoint array_sum_i {n} (xs : array nat n) (i : fin (array_sum xs)) : fin n :=
-match n as n'
-return forall (xs : array nat n') (i : fin (array_sum xs)), fin n' with
-| 0 => fun xs i => match i with end
-| S n => fun xs i =>
-  let i' := fin_nat i
-  in match i' <? xs None as cond
-  return i' <? xs None = cond -> fin (S n) with
-  | true => fun _ => None
-  | false => fun p => Some (array_sum_i (fun i => xs (Some i))
-    (nat_fin (array_sum _) (i' - xs None) (proj2 (Nat.add_lt_mono_r (i' - xs None) _ (xs None))
-      (rew <- [fun x => x < _] Nat.sub_add (xs None) i' (proj1 (Nat.ltb_ge i' (xs None)) p) in
-        rew Nat.add_comm (xs None) (array_sum _) in fin_nat_prop))))
-  end eq_refl
-end xs i.
-
-Lemma array_sum_i_prop1 {n} (xs : array nat n) (i : fin (array_sum xs))
-                        : let i' := fin_nat (array_sum_i xs i)
-                          in array_sum (array_take i' (Nat.lt_le_incl _ _ fin_nat_prop) xs)
-                            <= fin_nat i < array_sum (array_take (S i') fin_nat_prop xs).
-Proof.
-  induction n. inversion i. simpl in *.
-
-  set (b := fin_nat i <? xs None).
-  set (fn := fun p0 : b = false => Some (array_sum_i (fun i => xs (Some i))
-    (nat_fin (array_sum (fun i => xs (Some i))) (fin_nat i - xs None)
-      (proj2 (Nat.add_lt_mono_r (fin_nat i - xs None) (array_sum (fun i => xs (Some i))) (xs None))
-        (rew <- [fun x => x < array_sum (fun i => xs (Some i)) + xs None]
-          Nat.sub_add (xs None) (fin_nat i) (proj1 (Nat.ltb_ge (fin_nat i) (xs None)) p0)
-          in rew [lt (fin_nat i)] Nat.add_comm (xs None) (array_sum (fun i0 : fin n => xs (Some i0)))
-          in fin_nat_prop))))).
-
-  refine (_ : array_sum (array_take (fin_nat
-    ((if b as cond return (b = cond -> fin (S n))
-    then fun _ : b = true => None else fn) eq_refl)) (Nat.lt_le_incl _ _ fin_nat_prop) xs)
-    <= fin_nat i < array_take (S (fin_nat
-      ((if b as cond return (b = cond -> fin (S n))
-      then fun _ : b = true => None else fn) eq_refl))) fin_nat_prop xs None
-      + array_sum (fun i0 : fin _ => array_take (S (fin_nat
-        ((if b as cond return (b = cond -> fin (S n))
-        then fun _ : b = true => None else fn) eq_refl))) fin_nat_prop xs (Some i0))).
-
-  assert (Hfn : forall (q : b = false), exists q', fn q = Some (array_sum_i _
-    (nat_fin (array_sum (fun i => xs (Some i))) (fin_nat i - xs None) q'))). {
-    intro. eexists. reflexivity.
-  }
-
-  generalize dependent fn.
-
-  assert (Hb_lt : b = true -> fin_nat i < xs None) by (intro; apply Nat.ltb_lt; auto).
-  assert (Hb_ge : b = false -> fin_nat i >= xs None) by (intro; apply Nat.ltb_ge; auto).
-
-  generalize dependent b. intros. destruct b; simpl.
-  - constructor. apply Nat.le_0_l. rewrite Nat.add_0_r. apply Hb_lt. auto.
-  - specialize (Hb_ge eq_refl). specialize (Hfn eq_refl). destruct Hfn.
-    
-    specialize (IHn (fun i => xs (Some i)) (nat_fin _ (fin_nat i - xs None) x)).
-    rewrite nat_fin_nat in IHn. destruct IHn. constructor.
-    * rewrite H. unfold array_take at 1. simpl. rewrite Nat.add_comm.
-      rewrite <- (Nat.sub_add (xs None) (fin_nat i)); auto. apply Nat.add_le_mono_r.
-      evar (lhs1 : nat). evar (lhs2 : nat). refine (_ : lhs1 <= _).
-      unshelve evar (Hlhs : lhs1 = lhs2); [ | rewrite Hlhs; exact H0 ].
-      subst lhs1 lhs2. eapply array_sum_ext. intro. erewrite nat_fin_irrelevance. reflexivity.
-    * rewrite H. rewrite <- (Nat.sub_add (xs None) (fin_nat i)) at 1; auto.
-      unfold array_take at 1. simpl. rewrite (Nat.add_comm (xs None) (_ + _)).
-      apply Nat.add_lt_mono_r. evar (rhs1 : nat). evar (rhs2 : nat). refine (_ : _ < rhs1).
-      unshelve evar (Hrhs : rhs1 = rhs2); [ | rewrite Hrhs; exact H1 ].
-      subst rhs1 rhs2. unfold array_take. simpl. f_equal.
-      + erewrite nat_fin_irrelevance. reflexivity.
-      + apply array_sum_ext. intro. erewrite nat_fin_irrelevance. reflexivity.
-Qed.
-
-Lemma array_sum_i_prop2 {n} (xs : array nat n) (i : fin (array_sum xs)) (j : fin n)
-                        (p : let j' := fin_nat j
-                             in array_sum (array_take j' (Nat.lt_le_incl _ _ fin_nat_prop) xs)
-                          <= fin_nat i < array_sum (array_take (S j') fin_nat_prop xs))
-                        : array_sum_i xs i = j.
-Proof.
-  induction n. inversion j. simpl in *.
-
-  set (b1 := fin_nat i <? xs None) in *.
-  set (fn := fun p0 : b1 = false => Some
-    (array_sum_i (fun i0 : fin n => xs (Some i0))
-       (nat_fin (array_sum (fun i0 : fin n => xs (Some i0)))
-          (fin_nat i - xs None)
-          (proj2
-             (Nat.add_lt_mono_r (fin_nat i - xs None)
-                (array_sum (fun i0 : fin n => xs (Some i0)))
-                (xs None))
-             (rew <- [fun x : nat =>
-                      x <
-                      array_sum (fun i0 : fin n => xs (Some i0)) + xs None]
-                  Nat.sub_add (xs None) (fin_nat i)
-                    (proj1 (Nat.ltb_ge (fin_nat i) (xs None)) p0) in
-              rew [lt (fin_nat i)]
-                  Nat.add_comm (xs None)
-                    (array_sum (fun i0 : fin n => xs (Some i0))) in
-              fin_nat_prop))))).
-
-  refine (_ : (if b1 as cond return b1 = cond -> fin (S n)
-    then fun _ : b1 = true => None else fn) eq_refl = j).
-
-  assert (Hlt : b1 = true -> fin_nat i < xs None) by (intro; apply Nat.ltb_lt; auto).
-  assert (Hge : b1 = false -> fin_nat i >= xs None) by (intro; apply Nat.ltb_ge; auto).
-
-  assert (Hfn : forall (q : b1 = false), exists q',
-    fn q = Some (array_sum_i (fun i => xs (Some i)) (nat_fin _ (fin_nat i - xs None) q')))
-    by (intros; eexists; reflexivity).
-
-  generalize dependent fn. destruct b1; destruct j as [ j | ]; intros; auto.
-  * destruct p as [ p _ ]. simpl in p. specialize (Hlt eq_refl).
-    assert (p' : xs None <= fin_nat i) by (eapply Nat.le_trans; [ | apply p ]; apply Nat.le_add_r).
-    exfalso. eapply Nat.lt_irrefl. eapply Nat.lt_le_trans. eauto. auto.
-  * specialize (Hge eq_refl). specialize (Hfn eq_refl). destruct Hfn as [ q' Hfn ]. rewrite Hfn.
-    f_equal. apply IHn. rewrite nat_fin_nat. constructor.
-    + destruct p as [ p _ ]. apply <- Nat.add_le_mono_r. rewrite Nat.sub_add; auto.
-      rewrite Nat.add_comm. simpl in p. refine (rew [fun x => x <= _] _ in p).
-      f_equal. apply array_sum_ext. intro. unfold array_take. simpl.
-      erewrite nat_fin_irrelevance. reflexivity.
-    + destruct p as [ _ p ]. refine (_ : _ < array_sum (array_take (S (fin_nat j)) _ _)).
-      apply <- Nat.add_lt_mono_r. rewrite Nat.sub_add; auto. rewrite Nat.add_comm.
-      refine (rew [fun x => _ < _ + x] _ in p). apply array_sum_ext. intro.
-      unfold array_take. simpl. erewrite nat_fin_irrelevance. reflexivity.
-  *  specialize (Hge eq_refl). specialize (Hfn eq_refl). destruct Hfn as [ q' _ ].
-     simpl in p. destruct p as [ _ p ]. rewrite Nat.add_0_r in p. exfalso.
-     eapply Nat.lt_irrefl. eapply Nat.lt_le_trans. apply p. auto.
-Qed.
-
-Lemma array_sum_i_prop {n} (xs : array nat n) (i : fin (array_sum xs)) (j : fin n)
-                       : let j' := fin_nat j
-                         in array_sum (array_take j' (Nat.lt_le_incl _ _ fin_nat_prop) xs)
-                           <= fin_nat i < array_sum (array_take (S j') fin_nat_prop xs)
-                         <-> array_sum_i xs i = j.
-Proof. constructor. apply array_sum_i_prop2. intro. rewrite <- H. apply array_sum_i_prop1. Qed.
-
-Lemma array_sum_i_ext {n} (xs ys : array nat n) (i : fin (array_sum xs)) (j : fin (array_sum ys))
-                      (p : let i' := (fin_nat (array_sum_i xs i))
-                        in array_sum (array_take i' (Nat.lt_le_incl _ _ fin_nat_prop) ys)
-                        <= fin_nat j < array_sum (array_take (S i') fin_nat_prop ys))
-                      : array_sum_i xs i = array_sum_i ys j.
-Proof. symmetry. apply array_sum_i_prop. apply p. Qed.
-
-Fixpoint array_sum_j {n} (xs : array nat n) (i : fin (array_sum xs))
-                     : fin (xs (array_sum_i xs i)) :=
-match n as n'
-return forall (xs : array nat n') (i : fin (array_sum xs)), fin (xs (array_sum_i xs i)) with
-| 0 => fun xs i => match i with end
-| S n => fun xs i =>
-  let i' := fin_nat i
-  in match i' <? xs None as cond
-  return forall (p : i' <? xs None = cond), fin (xs (
-    match cond as cond
-    return i' <? xs None = cond -> fin (S n) with
-    | true => fun _ => None
-    | false => fun p => Some (array_sum_i (fun i => xs (Some i))
-      (nat_fin (array_sum _) (i' - xs None) _))
-    end p)
-  ) with
-  | true => fun p => nat_fin (xs None) i' (proj1 (Nat.ltb_lt i' (xs None)) p)
-  | false => fun p => array_sum_j (fun i => xs (Some i)) _
-  end eq_refl
-end xs i.
-
-Lemma array_sum_ij_prop {n} (xs : array nat n) (i : fin (array_sum xs))
-                        : fin_nat i = array_sum (array_take (fin_nat (array_sum_i xs i))
-                          (Nat.lt_le_incl _ _ fin_nat_prop) xs) + fin_nat (array_sum_j xs i).
-Proof.
-  induction n. inversion i. simpl. set (b := fin_nat i <? xs None).
-
-  set (fun1 := fun p : b = false =>
-    Some (array_sum_i (fun i0 : fin n => xs (Some i0))
-      (nat_fin (array_sum (fun i0 : fin n => xs (Some i0))) (fin_nat i - xs None)
-        (proj2 (Nat.add_lt_mono_r (fin_nat i - xs None)
-          (array_sum (fun i0 : fin n => xs (Some i0))) (xs None))
-          (rew <- [fun x : nat => x < array_sum (fun i0 : fin n => xs (Some i0)) + xs None]
-            Nat.sub_add (xs None) (fin_nat i) (proj1 (Nat.ltb_ge (fin_nat i) (xs None)) p) in
-            rew [lt (fin_nat i)] Nat.add_comm (xs None) (array_sum (fun i0 : fin n => xs (Some i0)))
-            in fin_nat_prop))))).
-
-  set (fun2 := fun p : b = true =>
-    nat_fin (xs None) (fin_nat i) (proj1 (Nat.ltb_lt (fin_nat i) (xs None)) p)).
-
-  set (fun3 := fun p : b = false =>
-    array_sum_j (fun i0 : fin n => xs (Some i0))
-      (nat_fin (array_sum (fun i0 : fin n => xs (Some i0))) (fin_nat i - xs None)
-        (proj2 (Nat.add_lt_mono_r (fin_nat i - xs None)
-          (array_sum (fun i0 : fin n => xs (Some i0))) (xs None))
-          (rew <- [fun x : nat => x < array_sum (fun i0 : fin n => xs (Some i0)) + xs None]
-            Nat.sub_add (xs None) (fin_nat i) (proj1 (Nat.ltb_ge (fin_nat i) (xs None)) p) in
-            rew [lt (fin_nat i)] Nat.add_comm (xs None) (array_sum (fun i0 : fin n => xs (Some i0)))
-            in fin_nat_prop))) : fin (xs (fun1 p))).
-
-  refine (_ : fin_nat i = array_sum (array_take
-    (fin_nat (match b as cond return (b = cond -> fin (S n)) with
-    | true => fun _ : b = true => None
-    | false => fun1
-    end eq_refl)) (Nat.lt_le_incl _ _ fin_nat_prop) xs)
-    + fin_nat (match b as cond return forall (p : b = cond),
-      fin (xs (match cond as cond' return b = cond' -> fin (S n) with
-        | true => fun _ : b = true => None
-        | false => fun1
-        end p)) with
-    | true => fun2
-    | false => fun3
-    end eq_refl)).
-
-  assert (Hfun2 : forall (q : b = true), fin_nat i = fin_nat (fun2 q)). {
-    intro. unfold fun2. rewrite nat_fin_nat. auto.
-  }
-
-  assert (Hfun13 : forall (q : b = false), fin_nat i = array_sum (array_take
-    (fin_nat (fun1 q : fin (S n))) (Nat.lt_le_incl _ _ fin_nat_prop) xs) + fin_nat (fun3 q)). {
-    intro. unfold fun3. simpl. unfold array_take. simpl. rewrite <- Nat.add_assoc.
-    specialize (IHn (fun i => xs (Some i))). etransitivity.
-    2: {
-      apply (f_equal (fun x => xs None + x)). etransitivity. apply IHn. f_equal.
-      * apply array_sum_ext. intro. unfold array_take. erewrite nat_fin_irrelevance. auto.
-      * reflexivity.
-    }
-    rewrite nat_fin_nat. rewrite Nat.add_comm. symmetry. apply Nat.sub_add.
-    apply Nat.ltb_ge. auto.
-  }
-  generalize dependent fun2.
-  generalize dependent fun3.
-  generalize dependent fun1.
-  destruct b; intros.
-  - apply Hfun2.
-  - apply Hfun13.
-Qed.
-
-Corollary array_sum_j_prop {n} (xs : array nat n) (i : fin (array_sum xs))
-                           : fin_nat (array_sum_j xs i) = fin_nat i
-                             - array_sum (array_take (fin_nat (array_sum_i xs i))
-                               (Nat.lt_le_incl _ _ fin_nat_prop) xs).
-Proof. rewrite array_sum_ij_prop. rewrite Nat.add_comm. symmetry. apply Nat.add_sub. Qed.
-
-Corollary array_sum_ij_prop1 {n} (xs : array nat n) (i : fin (array_sum xs))
-                             : fin_nat i - fin_nat (array_sum_j xs i)
-                               = array_sum (array_take (fin_nat (array_sum_i xs i))
-                                 (Nat.lt_le_incl _ _ fin_nat_prop) xs).
-Proof. rewrite array_sum_ij_prop. apply Nat.add_sub. Qed.
-
-Inductive path :=
-| HerePath : path
-| ConsPath : nat -> path -> path
+Inductive path {V} : forall n, term (n_options n V) -> Set :=
+| HerePath : forall [n] t, path n t
+| ConsPath : forall [n] c i, path n (Vec.v2a c.(term_cons_ts) i) -> path n (ConsTerm c)
+| BindPath : forall [n] t, path (S n) t -> path n (BindTerm t)
 .
 
-Fixpoint unfold_subterms_n {v} (t : mu_term v) : nat :=
-match t with
-| MuTerm _ (VarTH _ _ _) => 1
-| MuTerm _ (ConsTH _ _ n _ ts) =>
-  1 + array_sum (fun i => unfold_subterms_n (ts i))
-| MuBind _ t => unfold_subterms_n t
+Fixpoint paths_hlp fuel {V : Set} n (t : term (n_options n V)) : list (path n t) :=
+match fuel with
+| 0 => nil
+| S fuel =>
+  cons (HerePath t) (
+    match t as t' return list (path n t') with
+    | VarTerm _ => nil
+    | ConsTerm c => List.concat (Vec.to_list (Vec.a2v (fun i =>
+      List.map (ConsPath c i) (paths_hlp fuel n (Vec.v2a c.(term_cons_ts) i)))))
+    | BindTerm t => List.map (BindPath t) (paths_hlp fuel (S n) t)
+    end
+  )
 end.
 
-Lemma unfold_subterms_n_min {v} (t : mu_term v) : unfold_subterms_n t > 0.
-Proof. induction t; try apply Nat.lt_0_succ. apply IHt. Qed.
-
-Fixpoint path_i {v} (t : mu_term v) (i : fin (unfold_subterms_n t)) : path :=
-match t as t' return fin (unfold_subterms_n t') -> path with
-| MuTerm _ (VarTH _ _ _) => fun _ => HerePath
-| MuTerm _ (ConsTH _ _ n f ts) => fun i =>
-  match i with
-  | None => HerePath
-  | Some i =>
-    let i' := array_sum_i _ i
-    in ConsPath (fin_nat i') (path_i (ts i') (array_sum_j _ i))
-  end
-| MuBind _ t => path_i t
-end i.
-
-Lemma path_i_inj {v} (t : mu_term v) (i1 i2 : fin (unfold_subterms_n t))
-                 (p : path_i t i1 = path_i t i2) : i1 = i2.
+Lemma paths_hlp_prop {V : Set} {n} [t : term (n_options n V)] (p : path n t)
+                     fuel (Hfuel : fuel >= depth t)
+                     : List.Exists (fun p' => p' = p) (paths_hlp fuel n t).
 Proof.
-  induction t.
-  - destruct i1; destruct i2; auto; contradiction.
-  - destruct i1 as [ i1 | ]; destruct i2 as [ i2 | ]; auto; inversion p; clear p. f_equal.
-    simpl in *. apply fin_nat_inj in H1. apply fin_nat_inj.
-    etransitivity. apply array_sum_ij_prop.
-    etransitivity. 2: symmetry; apply array_sum_ij_prop.
-    set (i1i := array_sum_i _ i1). set (i1j := array_sum_j _ i1).
-    set (i2i := array_sum_i _ i2). set (i2j := array_sum_j _ i2).
-    remember (H1 : i1i = i2i) as i1i_i2i. clear H1 Heqi1i_i2i.
-    f_equal. rewrite i1i_i2i. auto.
-    specialize (H i1i i1j).
-    set (i1i_i2i' := f_equal (fun m => unfold_subterms_n (ts m)) i1i_i2i).
-    specialize (H (rew <- [fin] i1i_i2i' in i2j)).
-    rewrite H; clear H.
-    * clear H2. generalize dependent i1i_i2i'. clear i1i_i2i i1j.
-      remember i1i. clear Heqf1 i1i. remember i2j. clear i2j Heqf2.
-      generalize dependent (array_sum_i _ i2). clear i1 i2. simpl. intros.
-      destruct i1i_i2i'. auto.
-    * etransitivity. apply H2. clear H2.
-      refine (_ : path_i (ts i2i) i2j = path_i (ts i1i) (rew <- i1i_i2i' in i2j)).
-      remember i1i_i2i. clear Heqe. unfold i1i_i2i'. clear i1j i1i_i2i i1i_i2i'.
-      generalize dependent i1i. generalize dependent i2j. generalize dependent (array_sum_i _ i2).
-      simpl. clear i1 i2. intros. destruct e. auto.
-  - apply IHt. auto.
+  generalize dependent fuel. induction p; intros.
+  - destruct fuel.
+    * destruct t; inversion Hfuel. destruct t. inversion Hfuel.
+    * constructor. auto.
+  - destruct c as [ f ts ]. destruct fuel. inversion Hfuel. right. apply List.Exists_concat.
+    apply List.Exists_nth. exists (Fin.to_nat i).
+    exists (List.map (ConsPath (TermCons f ts) i) (paths_hlp fuel n (Vec.v2a ts i))).
+    constructor. rewrite Vec.to_list_length. apply Fin.to_nat_prop.
+    erewrite List.nth_error_nth. 2: apply Vec.to_list_nth. rewrite Vec.array_vec_array.
+    apply List.Exists_map. eapply List.Exists_impl; [ | apply IHp ]. intros p' Hp'. f_equal. auto.
+    apply le_S_n in Hfuel. apply List.list_max_le in Hfuel.
+    unshelve eapply List.Forall_nth in Hfuel. apply (Fin.to_nat i). apply 0.
+    erewrite List.nth_error_nth in Hfuel. apply Hfuel. etransitivity. apply Vec.to_list_nth.
+    f_equal. rewrite Vec.map_prop. rewrite Vec.array_vec_array. auto.
+    rewrite Vec.to_list_length. apply Fin.to_nat_prop.
+  - destruct fuel. inversion Hfuel. right. apply List.Exists_map.
+    eapply List.Exists_impl; [ | apply IHp ]. intros p' Hp'. f_equal. auto. apply le_S_n. auto.
 Qed.
 
-Fixpoint path_i_bind {v u : Set} (t : mu_term v) (k : v -> mu_term u) (p : path)
-                     (i : fin (unfold_subterms_n t)) (q : path_i t i = p)
-                     : fin (unfold_subterms_n (bind k t)) :=
-match t as t'
-return forall (i : fin (unfold_subterms_n t')), path_i t' i = p
--> fin (unfold_subterms_n (bind k t')) with
-| MuTerm _ (VarTH _ _ x) => fun _ _ =>
-  match unfold_subterms_n (k x) as n return n > 0 -> fin n with
-  | 0 => fun q => False_rec _ match q with end
-  | S _ => fun _ => None
-  end (unfold_subterms_n_min (k x))
-| MuTerm _ (ConsTH _ _ n f ts) => fun i =>
-  match i as i' return path_i (MuTerm _ (ConsTH _ _ n f ts)) i' = p -> fin (S _) with
-  | None => fun q => None
-  | Some i =>
-    let i : fin (array_sum (fun i => unfold_subterms_n (ts i))) := i
-    in match p as p' return path_i (MuTerm _ (ConsTH _ _ n f ts)) (Some i) = p' -> fin (S _) with
-    | HerePath => fun q => False_rec _ (eq_rec (path_i (MuTerm _ (ConsTH _ _ n f ts)) (Some i))
-      (fun p => match p with HerePath => False | _ => unit end) tt HerePath q)
-    | ConsPath _ p => fun q =>
-      let i' := array_sum_i (fun i => unfold_subterms_n (ts i)) i
-      in let j' := path_i_bind (ts i') k p (array_sum_j _ i)
-        (match q with eq_refl => eq_refl end)
-      in Some (nat_fin _ (array_sum (array_take (fin_nat i') (Nat.lt_le_incl _ _ fin_nat_prop)
-        (fun i => unfold_subterms_n (bind k (ts i)))) + fin_nat j')
-        (Nat.lt_le_trans _ (array_sum (array_take (S (fin_nat _)) fin_nat_prop _)) _
-          (rew array_sum_take_step (array_sum_i _ i) _ in
-            proj1 (Nat.add_lt_mono_l _ _ _) fin_nat_prop) (array_sum_take_le _ _ _)))
+Definition paths {V : Set} (t : term V) := paths_hlp (depth t) 0 t.
+
+Lemma paths_prop {V : Set} (t : term V) (p : path 0 t) : List.Exists (fun p' => p' = p) (paths t).
+Proof. apply paths_hlp_prop. auto. Qed.
+
+Fixpoint unfold_subterm_hlp {V n} (tsc : InfiniteTerm.telescope V n)
+                            {t : term (n_options n V)} (twf : wf t)
+                            (p : path n t) : InfiniteTerm.term V :=
+match p in path n' t' return telescope InfiniteTerm.term V n' -> wf t' -> _ with
+| HerePath t => fun tsc twf => InfiniteTerm.apply_telescope tsc (unfold t twf)
+| ConsPath c i p => fun tsc twf => unfold_subterm_hlp tsc (wf_cons_subterm twf i) p
+| BindPath t p => fun tsc twf =>
+  unfold_subterm_hlp (ConsTelescope (unfold (BindTerm t) twf) tsc) (wf_bind_nested twf) p
+end tsc twf.
+
+Lemma unfold_subterm_hlp_ext {V n} {tsc1 tsc2 : InfiniteTerm.telescope V n}
+                             (H : InfiniteTerm.telescope_eq tsc1 tsc2)
+                             {t : term (n_options n V)} (twf : wf t) (p : path n t)
+                             : InfiniteTerm.eq (unfold_subterm_hlp tsc1 twf p)
+                               (unfold_subterm_hlp tsc2 twf p).
+Proof.
+  induction p; simpl.
+  - apply InfiniteTerm.apply_telescope_ext. auto.
+  - apply IHp. auto.
+  - apply IHp. constructor; auto. reflexivity.
+Qed.
+
+Lemma unfold_subterm_hlp_irrelevance {V n} (tsc : InfiniteTerm.telescope V n)
+                                     {t : term (n_options n V)} (twf1 twf2 : wf t) (p : path n t)
+                                     : InfiniteTerm.eq (unfold_subterm_hlp tsc twf1 p)
+                                       (unfold_subterm_hlp tsc twf2 p).
+Proof.
+  induction p.
+  - apply InfiniteTerm.apply_telescope_eq. apply unfold_irrelevance.
+  - apply IHp.
+  - simpl. etransitivity. eapply unfold_subterm_hlp_ext. constructor.
+    apply unfold_irrelevance. reflexivity. apply IHp.
+Qed.
+
+Lemma unfold_subterm_hlp_prop {V n} (tsc : InfiniteTerm.telescope V n)
+                              {t : term (n_options n V)} (twf : wf t) (p : path n t)
+                              : InfiniteTerm.is_subterm (unfold_subterm_hlp tsc twf p)
+                                (InfiniteTerm.apply_telescope tsc (unfold t twf)).
+Proof.
+  induction p. eexists (InfiniteTerm.HerePath _). reflexivity.
+  - destruct c as [ f ts ]. destruct (IHp tsc (wf_cons_subterm twf i)) as [ p' Hp' ].
+    rewrite (InfiniteTerm.step_prop (unfold _ _)).
+    eapply InfiniteTerm.is_subterm_eq_rhs. symmetry. apply InfiniteTerm.apply_telescope_cons.
+    exists (InfiniteTerm.ConsPath (InfiniteTerm.Cons f (fun j =>
+      InfiniteTerm.apply_telescope tsc (unfold (Vec.v2a ts j) (wf_cons_subterm twf j)))) _ p').
+    apply Hp'.
+  - specialize (IHp (ConsTelescope (unfold (BindTerm t) twf) tsc) (wf_bind_nested twf)).
+    eapply InfiniteTerm.is_subterm_eq_rhs; eauto. apply (InfiniteTerm.apply_telescope_eq tsc).
+    etransitivity. apply unfold_subst. symmetry. apply unfold_bind_term.
+Qed.
+
+Definition unfold_subterm {V} {t : term V} (twf : wf t) (p : path 0 t) :=
+  unfold_subterm_hlp NilTelescope twf p.
+
+Lemma unfold_subterm_prop {V} {t : term V} (twf : wf t) (p : path 0 t)
+                          : InfiniteTerm.is_subterm (unfold_subterm twf p) (unfold t twf).
+Proof. apply (unfold_subterm_hlp_prop NilTelescope). Qed.
+
+Definition telescope := telescope term.
+
+Definition apply_telescope {V n} := Telescope.apply (fun V => subst (V:=V)) (V:=V) (n:=n).
+
+Lemma apply_telescope_cons {V n} (tsc : telescope V n) (c : term_cons (term (n_options n V)))
+                           : apply_telescope tsc (ConsTerm c) = ConsTerm (TermCons c.(term_cons_f)
+                             (Vec.map (apply_telescope tsc) c.(term_cons_ts))).
+Proof.
+  induction tsc; destruct c as [ f ts ].
+  - cbn. rewrite Vec.map_prop. rewrite Vec.vec_array_vec. reflexivity.
+  - etransitivity. apply IHtsc. simpl. rewrite Vec.map_map.
+    erewrite Vec.map_ext. reflexivity. intro. reflexivity.
+Qed.
+
+Lemma apply_telescope_inside {V n} (tsc : telescope V n) (t : term (n_options n V))
+                             : bind (fun v => apply_telescope tsc (pure v)) t = apply_telescope tsc t.
+Proof.
+  induction tsc. apply bind_pure. etransitivity; [ | apply IHtsc ].
+  etransitivity; [ | symmetry; apply bind_assoc ]. apply bind_ext. intro. destruct v; auto.
+Qed.
+
+Definition apply_telescope_bind_k {V n} (tsc : telescope V n) (v : n_options (S n) V) :=
+match v with
+| None => pure None
+| Some v => map Some (apply_telescope tsc (pure v))
+end.
+
+Lemma apply_telescope_bind {V n} (tsc : telescope V n) (t : term (n_options (S n) V))
+                           : apply_telescope tsc (BindTerm t) = BindTerm (bind (apply_telescope_bind_k tsc) t).
+Proof.
+  induction tsc.
+  - cbn. f_equal. etransitivity. symmetry. apply bind_pure. apply bind_ext. intro. destruct v; auto.
+  - etransitivity. apply IHtsc. f_equal. etransitivity. apply bind_assoc. apply bind_ext.
+    intro. repeat (destruct v as [ v | ]; auto). etransitivity. apply bind_map. simpl.
+    etransitivity. symmetry. apply map_bind. f_equal. cbn. apply apply_telescope_inside.
+Qed.
+
+Lemma apply_telescope_collapse {V n} (tsc : telescope V n) (v : n_options n V)
+                               {m t tsc'} (p : Telescope.collapse tsc v = Some (existT _ m (t, tsc')))
+                               : apply_telescope tsc (VarTerm v) = apply_telescope tsc' t.
+Proof. apply Telescope.apply_collapse; eauto. Qed.
+
+Lemma apply_telescope_not_added {V n} (tsc : telescope V n)
+                                (v : n_options n V) (H : ~(NOptions.is_added v))
+                                : exists v', apply_telescope tsc (VarTerm v) = VarTerm v'.
+Proof. apply Telescope.apply_not_added; eauto. Qed.
+
+Definition decode_inf_path_cons {V n}
+                                (decode_inf_path : term (n_options n V)
+                                               -> forall {t2 : InfiniteTerm.term V},
+                                                  InfiniteTerm.path t2
+                                               -> option (prod nat (list { f & fin (F_arity f) })))
+                                (c1 : term_cons (term (n_options n V)))
+                                (c2 : InfiniteTerm.cons (InfiniteTerm.term V))
+                                (i : fin (F_arity c2.(InfiniteTerm.cons_f)))
+                                (p : InfiniteTerm.path (c2.(InfiniteTerm.cons_ts) i))
+                                (need_dec : bool)
+                                : option (prod nat (list { f & fin (F_arity f) })) :=
+match F_eq_dec c1.(term_cons_f) c2.(InfiniteTerm.cons_f) with
+| left H =>
+  let t1 := Vec.v2a c1.(term_cons_ts) (rew <- [fun x => fin (F_arity x)] H in i) in
+  match decode_inf_path t1 p with
+  | None => None
+  | Some (m, p') =>
+    if Nat.eq_dec n m
+    then Some (if need_dec then m - 1 else m, cons (existT _ c2.(InfiniteTerm.cons_f) i) p')
+    else Some (m, p')
+  end
+| right _ => None
+end.
+
+Definition decode_inf_path_bind {V : Set}
+  (decode_inf_path : forall {n} (tsc : telescope V n)
+                     (t1 : term (n_options n V)) {t2 : InfiniteTerm.term V}
+                     (p : InfiniteTerm.path t2),
+                     option (prod nat (list { f & fin (F_arity f) })))
+  {n} (tsc : telescope V n) (t1 : term (n_options (S n) V))
+  (c2 : InfiniteTerm.cons (InfiniteTerm.term V)) (i : fin (F_arity c2.(InfiniteTerm.cons_f)))
+  (p : InfiniteTerm.path (c2.(InfiniteTerm.cons_ts) i))
+  : option (prod nat (list { f & fin (F_arity f) })) :=
+let tsc := ConsTelescope (BindTerm t1) tsc in
+match t1 with
+| ConsTerm c1 => decode_inf_path_cons (decode_inf_path tsc) c1 c2 i p true
+| _ => None
+end.
+
+Fixpoint decode_inf_path {V n} (tsc : telescope V n) (t1 : term (n_options n V))
+                         {t2 : InfiniteTerm.term V} (p : InfiniteTerm.path t2)
+                         : option (prod nat (list { f & fin (F_arity f) })) :=
+match p with
+| InfiniteTerm.HerePath _ => Some (n, nil)
+| InfiniteTerm.ConsPath c2 i p =>
+  match t1 with
+  | VarTerm v =>
+    match Telescope.collapse tsc v with
+    | Some (existT _ n (BindTerm t1, tsc)) =>
+      decode_inf_path_bind (fun n => decode_inf_path) tsc t1 c2 i p
+    | _ => None
+    end
+  | ConsTerm c1 => decode_inf_path_cons (decode_inf_path tsc) c1 c2 i p false
+  | BindTerm t1 => decode_inf_path_bind (fun n => decode_inf_path) tsc t1 c2 i p
+  end
+| InfiniteTerm.EqPath _ p => decode_inf_path tsc t1 p
+end.
+
+Definition refine_inf_path_cons {V n}
+                                (refine_inf_path : forall (t : term (n_options n V)),
+                                                   list { f & fin (F_arity f) } -> path n t)
+                                (c : term_cons (term (n_options n V)))
+                                f (i : fin (F_arity f)) (p : list { f & fin (F_arity f) })
+                                : path n (ConsTerm c) :=
+match F_eq_dec c.(term_cons_f) f with
+| left Hf =>
+  let i' := rew <- [fun x => fin (F_arity x)] Hf in i in
+  ConsPath c i' (refine_inf_path (Vec.v2a c.(term_cons_ts) i') p)
+| right _ => HerePath _
+end.
+
+Fixpoint refine_inf_path {V n} (t : term (n_options n V)) (p : list { f & fin (F_arity f) })
+                         : path n t :=
+match p with
+| nil => HerePath t
+| cons (existT _ f i) p =>
+  match t as t' return path n t' with
+  | VarTerm _ => HerePath _
+  | ConsTerm c => refine_inf_path_cons refine_inf_path c f i p
+  | BindTerm t =>
+    match t as t' return path n (BindTerm t') with
+    | ConsTerm c =>
+      let c := c : term_cons (term (n_options (S n) V)) in
+      BindPath _ (refine_inf_path_cons refine_inf_path c f i p)
+    | _ => HerePath _
     end
   end
-| MuBind _ t => fun i q => path_i_bind t _ p i q
-end i q.
-
-Lemma path_i_bind_irrelevance {v u : Set} (t : mu_term v) (k : v -> mu_term u) (p : path)
-                              (i : fin (unfold_subterms_n t)) (q1 q2 : path_i t i = p)
-                              : path_i_bind t k p i q1 = path_i_bind t k p i q2.
-Proof.
-  generalize dependent u. generalize dependent p. induction t; intros. auto.
-  - destruct i; auto. destruct p. inversion q1.
-    simpl. f_equal. apply nat_fin_ext. f_equal. f_equal. apply H.
-  - simpl. apply IHt.
-Qed.
-
-Lemma path_0_is_here {v n} (t : mu_term v) (p : S n = unfold_subterms_n t)
-                     : path_i t (rew p in None) = HerePath.
-Proof.
-  generalize dependent n. induction t; auto.
-  intros m p. rewrite (fin_n_m p (y := None)). auto. apply fin_0_0.
-Qed.
-
-Lemma path_i_bind_prop {v u : Set} (t : mu_term v) (k : v -> mu_term u) (p : path)
-                       (i : fin (unfold_subterms_n t)) (q : path_i t i = p)
-                       : path_i (bind k t) (path_i_bind t k p i q) = p.
-Proof.
-  generalize dependent u. generalize dependent p. induction t; intros.
-  - transitivity HerePath; auto. simpl in *. clear i q.
-    generalize dependent (unfold_subterms_n_min (k x)). intro.
-    assert (exists n, S n = unfold_subterms_n (k x)).
-    * destruct unfold_subterms_n. inversion g. exists n. auto.
-    * destruct H as [ n q ].
-    etransitivity. 2: apply (path_0_is_here _ q). f_equal.
-    destruct (unfold_subterms_n (k x)). inversion q. symmetry. apply fin_0_0.
-  - destruct i as [ i | ]; auto. destruct p; inversion q. simpl. f_equal.
-    * etransitivity; [ | apply H1 ]. f_equal. symmetry. apply array_sum_i_ext.
-      constructor; rewrite nat_fin_nat.
-      + apply Nat.le_add_r.
-      + rewrite <- array_sum_take_step. apply Nat.add_lt_mono_l. apply fin_nat_prop.
-    * assert (H2' : path_i (ts (array_sum_i (fun i => unfold_subterms_n (ts i)) i))
-        (array_sum_j (fun i => unfold_subterms_n (ts i)) i) = p) by exact H2.
-      clear H2. rename H2' into H2.
-
-      etransitivity; [ | apply (H _ _ _ H2 _ k) ].
-
-      evar (i' : fin n).
-      evar (j' : fin (unfold_subterms_n (bind k (ts i')))).
-      refine (_ : path_i (bind k (ts i')) j' = _).
-
-      assert (Hi : i' = array_sum_i (fun i0 : fin n => unfold_subterms_n (ts i0)) i). {
-        symmetry. apply array_sum_i_ext. constructor; rewrite nat_fin_nat.
-        + apply Nat.le_add_r.
-        + rewrite <- array_sum_take_step. apply Nat.add_lt_mono_l. apply fin_nat_prop.
-      }
-
-      evar (i'' : fin (array_sum (fun i => unfold_subterms_n (bind k (ts i))))).
-      refine (let _ := eq_refl : i' = array_sum_i _ i'' in _). clear e.
-
-      assert (Hj : fin_nat j' = fin_nat (path_i_bind
-        (ts (array_sum_i (fun i => unfold_subterms_n (ts i)) i)) k p
-        (array_sum_j (fun i => unfold_subterms_n (ts i)) i) H2)). {
-        unfold j'. etransitivity.
-        apply (array_sum_j_prop (fun i => unfold_subterms_n (bind k (ts i))) i'').
-        unfold i''. rewrite nat_fin_nat. rewrite Nat.add_comm at 1.
-
-        assert (aux : forall n m p, m = p -> n + m - p = n). {
-          intros. rewrite H0. apply Nat.add_sub.
-        }
-
-        etransitivity. eapply aux.
-        + clear H1 H2 aux.
-
-          assert (aux : forall n1 n2 (p : n1 = n2) (xs1 : array nat n1) (xs2 : array nat n2),
-            (forall i, xs1 i = xs2 (rew [fin] p in i)) -> array_sum xs1 = array_sum xs2). {
-            intros n1 n2 p'. rewrite p'. intros. apply array_sum_ext; auto.
-          }
-
-          unshelve eapply aux. f_equal. symmetry. apply Hi. intro. clear aux.
-          unfold array_take. simpl. f_equal. f_equal. f_equal. apply nat_fin_ext.
-          symmetry. apply fin_nat_rew.
-        + f_equal. apply path_i_bind_irrelevance.
-      }
-
-      generalize dependent j'.
-      generalize dependent i'.
-      intro. intro. rewrite Hi. intros. f_equal.
-      etransitivity. symmetry. apply fin_nat_fin.
-      etransitivity; [ | apply fin_nat_fin ].
-      apply nat_fin_ext. apply Hj.
-  - apply IHt.
-Qed.
-
-Corollary path_i_one_unfold_prop {v : Set} (t1 t2 : mu_term (option v)) (p : path)
-                            (i : fin (unfold_subterms_n t2)) (q : path_i t2 i = p)
-                            : path_i (bind (one_unfold_k t1) t2) (path_i_bind t2 _ p i q) = p.
-Proof. apply path_i_bind_prop. Qed.
-
-Fixpoint unfold_subterm {v} {t : mu_term v} (twf : wf t) (i : fin (unfold_subterms_n t))
-                        (p : path) (q : path_i t i = p) : infinite_term v :=
-match p, q with
-| HerePath, _ => unfold t twf
-| ConsPath x p, q =>
-  match t as t' return wf t' -> forall i', path_i t' i' = ConsPath x p -> infinite_term v with
-  | MuTerm _ (VarTH _ _ _) => fun twf i q =>
-    False_rec _ (eq_rec HerePath (fun p => match p with HerePath => unit | _ => False end) tt _ q)
-  | MuTerm _ (ConsTH _ _ n _ ts) => fun twf i q =>
-    match i, q with
-    | None, q =>
-      False_rec _ (eq_rec HerePath (fun p => match p with HerePath => unit | _ => False end) tt _ q)
-    | Some i, q =>
-      unfold_subterm (wf_cons_list twf (array_sum_i _ i)) (array_sum_j _ i) p
-        (match q with eq_refl => eq_refl end)
-    end
-  | MuBind _ t => fun twf i q =>
-    match t as t', twf return forall i', path_i t' i' = ConsPath x p -> infinite_term v with
-    | MuTerm _ (VarTH _ _ _), twf => fun _ => False_rect _ match twf with end
-    | MuTerm _ (ConsTH _ _ n f ts), twf => fun i q =>
-      match i, q with
-      | None, q => unfold _ (wf_one_unfold_wf twf)
-      | Some i, q =>
-        unfold_subterm (wf_cons_list (wf_one_unfold_wf twf) (array_sum_i _ i))
-          (path_i_bind _ _ p (array_sum_j _ i) (match q with eq_refl => eq_refl end)) p
-          (path_i_one_unfold_prop _ _ _ _ _)
-      end
-    | MuBind _ t, twf => False_rec _ match twf with end
-    end i q
-  end twf i q
 end.
 
-Lemma unfold_subterm_prop {v} {t : mu_term v} (twf : wf t) (i : fin (unfold_subterms_n t))
-                          (p : path) (q : path_i t i = p)
-                          : InfiniteTerm.subterm (unfold_subterm twf i p q) (unfold t twf).
+Definition wf_term V := { t : term V & wf t }.
+
+Definition wf_term_term {V} (t : wf_term V) := let (t, _) := t in t.
+
+Definition wf_term_wf {V} (t : wf_term V) : wf (wf_term_term t) :=
+  let (t, twf) return wf (wf_term_term t) := t in twf.
+
+Definition wf_subst {V} (t1 : wf_term V) (t2 : wf_term (option V)) : wf_term V :=
+  existT _ (subst (wf_term_term t1) (wf_term_term t2)) (subst_wf (wf_term_wf t1) (wf_term_wf t2)).
+
+Definition wf_telescope := Fin.telescope wf_term.
+
+Fixpoint wf_telescope_forget {V n} (tsc : wf_telescope V n) : telescope V n :=
+match tsc in Fin.telescope _ _ n' return telescope V n' with
+| NilTelescope => NilTelescope
+| ConsTelescope t tsc => ConsTelescope (wf_term_term t) (wf_telescope_forget tsc)
+end.
+
+Definition wf_telescope_forget_collapse_hlp
+  {V} (x : { m & prod (wf_term (n_options m V)) (wf_telescope V m) })
+  : { m & prod (term (n_options m V)) (telescope V m) } :=
+  let (m, t_tsc) := x in
+  let (t, tsc) := t_tsc in
+  existT _ m (wf_term_term t, wf_telescope_forget tsc).
+
+Lemma wf_telescope_forget_collapse {V n} (tsc : wf_telescope V n) (v : n_options n V)
+                                   : Telescope.collapse (wf_telescope_forget tsc) v
+                                   = option_map wf_telescope_forget_collapse_hlp
+                                     (Telescope.collapse tsc v).
+Proof. induction tsc. auto. destruct v. apply IHtsc. auto. Qed.
+
+Lemma wf_apply_telescope_forget_wf {V n} (tsc : wf_telescope V n)
+                                   (t : term (n_options n V)) (twf : wf t)
+                                   : wf (apply_telescope (wf_telescope_forget tsc) t).
+Proof. induction tsc. auto. apply IHtsc. apply subst_wf; auto. apply wf_term_wf. Qed.
+
+Fixpoint wf_telescope_unfold {V n} (tsc : wf_telescope V n) : InfiniteTerm.telescope V n :=
+match tsc in Fin.telescope _ _ n' return Fin.telescope _ _ n' with
+| NilTelescope => NilTelescope
+| ConsTelescope (existT _ t twf) tsc => ConsTelescope (unfold t twf) (wf_telescope_unfold tsc)
+end.
+
+Definition wf_apply_telescope {V n} := Telescope.apply (fun V => wf_subst (V:=V)) (V:=V) (n:=n).
+
+Lemma wf_apply_telescope_term {V n} (tsc : wf_telescope V n) (t : wf_term (n_options n V))
+                              : wf_term_term (wf_apply_telescope tsc t)
+                              = apply_telescope (wf_telescope_forget tsc) (wf_term_term t).
+Proof. induction tsc. auto. apply IHtsc. Qed.
+
+Definition wf_unfold {V} (t : wf_term V) := unfold (wf_term_term t) (wf_term_wf t).
+
+Lemma wf_unfold_irrelevance {V} {t : term V} (twf1 twf2 : wf t)
+                            : InfiniteTerm.eq (wf_unfold (existT _ _ twf1)) (wf_unfold (existT _ _ twf2)).
+Proof. apply unfold_irrelevance. Qed.
+
+Lemma wf_unfold_apply_telescope {V n} (tsc : wf_telescope V n) (t : wf_term (n_options n V))
+                                : InfiniteTerm.eq (wf_unfold (wf_apply_telescope tsc t))
+                                  (unfold (apply_telescope (wf_telescope_forget tsc) (wf_term_term t))
+                                    (wf_apply_telescope_forget_wf tsc (wf_term_term t) (wf_term_wf t))).
 Proof.
-  generalize dependent t. induction p; intros. constructor. apply InfiniteTerm.eq_refl.
-  destruct t. destruct t. inversion q.
-  - destruct i as [ i | ]; [ | inversion q ]. rewrite (InfiniteTerm.step_prop (unfold _ _)).
-    eapply InfiniteTerm.ConsInfSubterm. apply IHp. exists (array_sum_i _ i). reflexivity.
-  - destruct t; [ destruct t | ]; inversion twf. destruct i as [ i | ]; [ | inversion q ].
-    rewrite (InfiniteTerm.step_prop (unfold (MuBind v _) _)). eapply InfiniteTerm.ConsInfSubterm.
-    simpl. apply IHp. exists (array_sum_i _ i). reflexivity.
+  unfold wf_unfold. generalize (wf_term_wf (wf_apply_telescope tsc t)) as twf'.
+  rewrite wf_apply_telescope_term. intro. apply unfold_irrelevance.
 Qed.
 
-Lemma unfold_subterm_irrelevance {v} {t : mu_term v} (twf : wf t) (i : fin (unfold_subterms_n t)) 
-                         (p : path) (q1 q2 : path_i t i = p)
-                         : unfold_subterm twf i p q1 = unfold_subterm twf i p q2.
+Lemma wf_unfold_apply_telescope_collapse
+  {V n} (tsc : wf_telescope V n) (v : n_options n V) (twf : wf (VarTerm v))
+  {m t tsc'} (p : Telescope.collapse tsc v = Some (existT _ m (t, tsc')))
+  : InfiniteTerm.eq (wf_unfold (wf_apply_telescope tsc (existT _ _ twf)))
+    (wf_unfold (wf_apply_telescope tsc' t)).
 Proof.
-  generalize dependent t. induction p; intros. auto.
-  destruct t. destruct t. inversion q1.
-  - destruct i as [ i | ]; [ | inversion q1 ]. apply IHp.
-  - destruct t; [ | inversion twf ]. destruct t. inversion twf.
-    destruct i as [ i | ]; [ | inversion q1 ]. etransitivity. apply IHp.
-    apply (EqdepFacts.f_eq_dep_non_dep _ (fun j => path_i _ j = p) _ _ _ _ _
-      (fun j q => @unfold_subterm v _ _ j p q)). apply EqdepFacts.eq_sigT_eq_dep.
-    unshelve eapply eq_existT_curried. apply path_i_bind_irrelevance.
-    evar (x : nat). evar (q'T : fin x -> Prop). evar (y : fin x). evar (q' : q'T y).
-    refine (rew_opp_r _ _ q': _ = q'). 
+  etransitivity. apply wf_unfold_apply_telescope. simpl. destruct t as [ t' twf' ].
+  generalize (wf_apply_telescope_forget_wf tsc _ twf). erewrite apply_telescope_collapse. intro.
+  transitivity (unfold _ (wf_apply_telescope_forget_wf tsc' _ twf')). apply unfold_irrelevance.
+  symmetry. apply wf_unfold_apply_telescope. etransitivity. apply wf_telescope_forget_collapse.
+  rewrite p. reflexivity.
 Qed.
 
-Lemma unfold_subterm_ext {v} {t1 t2 : mu_term v} (Ht : t1 = t2)
-                         (twf1 : wf t1) (twf2 : wf t2) (Htwf : rew Ht in twf1 = twf2)
-                         (i1 : fin (unfold_subterms_n t1)) (i2 : fin (unfold_subterms_n t2))
-                         (Hi : fin_nat i1 = fin_nat i2) (p : path)
-                         (q1 : path_i t1 i1 = p) (q2 : path_i t2 i2 = p)
-                         : unfold_subterm twf1 i1 p q1 = unfold_subterm twf2 i2 p q2.
+Lemma wf_apply_telescope_unfold {V n} (tsc : wf_telescope V n) (t : wf_term (n_options n V))
+                                : InfiniteTerm.eq (wf_unfold (wf_apply_telescope tsc t))
+                                  (InfiniteTerm.apply_telescope (wf_telescope_unfold tsc) (wf_unfold t)).
 Proof.
-  destruct Ht. destruct (fin_nat_inj _ _ Hi). destruct Htwf.
-  apply unfold_subterm_irrelevance.
+  induction tsc. reflexivity. destruct t0 as [ t' twf' ]. etransitivity. apply IHtsc. cbn.
+  apply InfiniteTerm.apply_telescope_eq. destruct t as [ t twf ]. symmetry.
+  apply unfold_subst.
 Qed.
 
-Definition unfold_subterms {v} (t : mu_term v) (twf : wf t)
-                           : array (infinite_term v) (unfold_subterms_n t) :=
-fun i => unfold_subterm twf i _ eq_refl.
+Definition wf_unfold_subterm {V n} (tsc : wf_telescope V n) (t : wf_term (n_options n V))
+                             (p : path n (wf_term_term t)) :=
+  unfold_subterm_hlp (wf_telescope_unfold tsc) (wf_term_wf t) p.
 
-(*
-Inductive subterm {v} : infinite_term v -> infinite_term v -> Prop :=
-| ReflInfSubterm : forall t1 t2, eq t1 t2 -> subterm t1 t2
-| ConsInfSubterm : forall t1 t2 n f ts, subterm t1 t2 -> in_array t2 ts
-                -> subterm t1 (InfTerm _ (ConsTH _ _ n f ts))
-.
-*)
+Definition decode_inf_path_spec {V n} (tsc : wf_telescope V n) (t : wf_term (n_options n V))
+                                (p : InfiniteTerm.path (wf_unfold (wf_apply_telescope tsc t))) :=
+  exists m res, decode_inf_path (wf_telescope_forget tsc) (wf_term_term t) p = Some (m, res) /\ m <= n
+/\ (m = n -> InfiniteTerm.eq (wf_unfold_subterm tsc t (refine_inf_path _ res)) (InfiniteTerm.at_path p))
+/\ (m < n -> exists (v : n_options n V) t' tsc', Telescope.collapse tsc v = Some (existT _ m (t', tsc'))
+          /\ InfiniteTerm.eq (wf_unfold_subterm tsc' t' (refine_inf_path _ res)) (InfiniteTerm.at_path p)).
 
-Inductive mu_subst_telescope : Set -> Set :=
-| NilMST : forall v, mu_subst_telescope v
-| ConsMST {v : Set} : mu_term (option v) -> mu_subst_telescope v -> mu_subst_telescope (option v)
-.
+Definition wf_bind_term V := { t : wf_term V & { t' & wf_term_term t = BindTerm t' } }.
 
-Inductive inf_mu_subterm {v} (vs : list (mu_term )) : forall n, infinite_term v -> mu_term (n_options n v) -> Prop :=
-| ReflMuInfST : forall t twf, inf_mu_subterm 0 (unfold t twf) t
-| ConsMuInfST : forall n m f ts1 ts2 i, inf_mu_subterm n (ts1 i) (ts2 i)
-                                     -> inf_mu_subterm n (InfTerm _ (ConsTH _ _ m f ts1))
-                                                         (MuTerm  _ (ConsTH _ _ m f ts2))
+Definition wf_bind_term_term {V} (t : wf_bind_term V) := let (t, _) := t in t.
 
-.
+Definition wf_bind_telescope := Fin.telescope wf_bind_term.
 
-Lemma unfold_mu_bind_without_var {v : Set} (n : nat) (t : mu_term (n_options n v))
-                                 (twf1 : wf t) (twf2 : wf (MuBind _ t)) (t' : infinite_term v)
-                                 (H : InfiniteTerm.eq (InfiniteTerm.map (n_Somes n) t') (unfold t twf1))
-                                 : InfiniteTerm.eq t' (unfold (MuBind _ t) twf2).
+Fixpoint wf_bind_telescope_forget_bind {V n} (tsc : wf_bind_telescope V n) : wf_telescope V n :=
+match tsc in Fin.telescope _ _ n' return wf_telescope V n' with
+| NilTelescope => NilTelescope
+| ConsTelescope t tsc => ConsTelescope (wf_bind_term_term t) (wf_bind_telescope_forget_bind tsc)
+end.
+
+Definition wf_bind_telescope_forget_bind_collapse_hlp
+  {V} (x : { m & prod (wf_bind_term (n_options m V)) (wf_bind_telescope V m) })
+  : { m & prod (wf_term (n_options m V)) (wf_telescope V m) } :=
+  let (m, t_tsc) := x in
+  let (t, tsc) := t_tsc in
+  existT _ m (wf_bind_term_term t, wf_bind_telescope_forget_bind tsc).
+
+Lemma wf_bind_telescope_forget_bind_collapse
+  {V n} (tsc : wf_bind_telescope V n) {U} (v : n_options n U)
+  : Telescope.collapse (wf_bind_telescope_forget_bind tsc) v
+  = option_map wf_bind_telescope_forget_bind_collapse_hlp (Telescope.collapse tsc v).
+Proof. induction tsc. auto. destruct v. apply IHtsc. auto. Qed.
+
+Definition wf_bind_telescope_forget {V n} (tsc : wf_bind_telescope V n) : telescope V n :=
+  wf_telescope_forget (wf_bind_telescope_forget_bind tsc).
+
+Definition wf_bind_telescope_forget_collapse_hlp
+  {V} (x : { m & prod (wf_bind_term (n_options m V)) (wf_bind_telescope V m) })
+  := wf_telescope_forget_collapse_hlp (wf_bind_telescope_forget_bind_collapse_hlp x).
+
+Lemma wf_bind_telescope_forget_collapse
+  {V n} (tsc : wf_bind_telescope V n) (v : n_options n V)
+  : Telescope.collapse (wf_bind_telescope_forget tsc) v
+  = option_map wf_bind_telescope_forget_collapse_hlp (Telescope.collapse tsc v).
 Proof.
-  remember (InfiniteTerm.map Some t') as t1'. remember (unfold t twf1) as t1.
-  cofix aux. destruct t' as [ t' ]. destruct t1 as [ t1 ]. destruct t1' as [ t1' ]. inversion H.
-  - admit.
-  - destruct t'; rewrite InfiniteTerm.step_prop in Heqt1'; inversion Heqt1'.
-    rewrite H4 in H0; inversion H0.
-    ...
-
-Lemma unfold_subterm_surj_aux' {v : Set} (t : mu_term (option v)) (t' : infinite_term v)
-                               (twf1 : wf t) (twf2 : wf (MuBind _ t))
-                               (H : InfiniteTerm.subterm (InfiniteTerm.map Some t') (unfold t twf1))
-                               : InfiniteTerm.subterm t' (unfold (MuBind _ t) twf2).
-Proof.
-  remember (InfiniteTerm.map Some t') as t1'. remember (unfold t twf1) as t1.
-  induction H. rewrite Heqt1 in *. rewrite Heqt1' in *. constructor. eapply unfold_subterm_surj_aux''. eauto.
-
-Lemma unfold_subterm_surj_aux {v} (t : mu_term v) (twf : wf t) (t' : infinite_term v)
-                              (H : InfiniteTerm.subterm t' (unfold t twf))
-                              : exists i p q, InfiniteTerm.eq t' (unfold_subterm twf i p q).
-Proof.
-  remember (unfold t twf) as t''. symmetry in Heqt''. generalize dependent t.
-  induction H; intros.
-  - destruct Heqt''.
-    inversion twf; [ destruct H0 | destruct H1 .. ]; exists None, HerePath, eq_refl; auto.
-  - rewrite (InfiniteTerm.step_prop (unfold _ _)) in Heqt''.
-    inversion twf; [ destruct H1 | destruct H2 .. ]; simpl InfiniteTerm.step in Heqt'';
-    inversion Heqt''; destruct H3; destruct H4.
-    * admit.
-    * apply inj_pair2_eq_dec in H5; [ | apply Nat.eq_dec ]. destruct H5. clear Heqt''.
-
-Lemma unfold_subterm_surj_aux {v} (t : mu_term v) (twf : wf t) (t' : infinite_term v)
-                                 (H : InfiniteTerm.subterm t' (unfold t twf))
-                                 : exists i p q, InfiniteTerm.eq t' (unfold_subterm twf i p q).
-Proof.
-  induction t.
-  - inversion H. exists None, HerePath, eq_refl. auto.
-    rewrite InfiniteTerm.step_prop in H0. inversion H0.
-  - inversion H. exists None, HerePath, eq_refl. auto.
-    rewrite InfiniteTerm.step_prop in H1. simpl InfiniteTerm.step in *.
-    inversion H1. destruct H3. destruct H6. destruct H7. destruct H4 as [ i H4 ]. destruct H4.
-    apply inj_pair2_eq_dec in H8; [ | apply Nat.eq_dec ].
-    rewrite H8 in H2. specialize (H0 i _ t1 H2). destruct H0 as [ j [ p [ q H0 ] ] ].
-    set (i'' := S (array_sum (array_take (fin_nat i) (Nat.lt_le_incl _ _ fin_nat_prop)
-      (fun i => unfold_subterms_n (ts i))) + fin_nat j)).
-    assert (Hi' : i'' < unfold_subterms_n (MuTerm v (ConsTH v (mu_term v) n0 f1 ts))). {
-      unfold i''. simpl. apply -> Nat.succ_lt_mono.
-      eapply Nat.lt_le_trans; [ | apply (array_sum_take_le _ (S (fin_nat i)) fin_nat_prop) ].
-      rewrite <- array_sum_take_step. apply Nat.add_lt_mono_l. apply fin_nat_prop.
-    }
-    subst i''. set (i' := nat_fin _ _ Hi'). exists i', (ConsPath (fin_nat i) p).
-    assert (Hi : array_sum_i (fun i0 : fin n0 => unfold_subterms_n (ts i0))
-      (nat_fin (array_sum (fun i0 : fin n0 => unfold_subterms_n (ts i0)))
-        (array_sum (array_take (fin_nat i) (Nat.lt_le_incl (fin_nat i) n0 fin_nat_prop)
-           (fun i0 : fin n0 => unfold_subterms_n (ts i0))) + fin_nat j)
-        (PeanoNat.lt_S_n _ _ Hi')) = i). {
-      apply array_sum_i_prop. rewrite nat_fin_nat. constructor.
-        apply Nat.le_add_r. rewrite <- array_sum_take_step. apply Nat.add_lt_mono_l.
-        apply fin_nat_prop.
-    }
-    assert (Hj : fin_nat j = fin_nat (array_sum_j (fun i0 : fin n0 => unfold_subterms_n (ts i0))
-      (nat_fin _ _ (PeanoNat.lt_S_n _ _ Hi')))). {
-      symmetry. etransitivity. apply (@array_sum_j_prop n0 (fun i => unfold_subterms_n (ts i))).
-      rewrite nat_fin_nat.
-
-      assert (aux : forall n m k, n = k -> n + m - k = m). {
-        intros. rewrite H3. rewrite Nat.add_comm. apply Nat.add_sub.
-      }
-
-      etransitivity. apply aux. clear aux.
-      evar (i1 : nat). evar (Hi1 : i1 <= n0). refine (_ : array_sum (array_take i1 Hi1 _) = _).
-
-      assert (Hi1' : i1 = fin_nat (array_sum_i (fun i => unfold_subterms_n (ts i))
-        (nat_fin (array_sum (fun i => unfold_subterms_n (ts i))) _ (PeanoNat.lt_S_n _ _ Hi'))))
-        by (symmetry; unfold i1; f_equal; auto).
-      generalize dependent Hi1. generalize dependent i1. intros i1 pi1. rewrite pi1. clear pi1.
-      intros. apply array_sum_ext. intro. apply array_take_irrelevance. auto.
-    }
-    unshelve eexists.
-    * simpl. f_equal. f_equal; auto. etransitivity; [ | apply q ].
-      apply EqdepFacts.f_eq_dep_non_dep. apply EqdepFacts.eq_sigT_eq_dep. symmetry.
-      apply (eq_existT_curried (eq_sym (f_equal _ Hi))). apply fin_nat_inj.
-      etransitivity; [ | apply Hj ].
-      etransitivity;
-        [ | apply (fin_nat_rew _ _ _ (f_equal unfold_subterms_n (eq_sym (f_equal ts Hi)))) ].
-      f_equal. apply (rew_map fin unfold_subterms_n).
-    * refine (rew [InfiniteTerm.eq t1] _ in H0). simpl. unshelve eapply unfold_subterm_ext.
-      f_equal. symmetry. apply Hi. simpl. admit. auto.
-  - simpl. apply IHt.
-Admitted.
-
-Lemma unfold_subterm_surj {v} {t : mu_term v} (twf : wf t) (t' : infinite_term v)
-                          (H : InfiniteTerm.subterm t' (unfold t twf))
-                          : exists i, InfiniteTerm.eq t' (unfold_subterms t twf i).
-Proof.
-  specialize (unfold_subterm_surj_aux t twf t' H). intro. destruct H0 as [ i [ p [ q H0 ] ] ].
-  destruct q. exists i. auto.
+  etransitivity. apply wf_telescope_forget_collapse.
+  induction tsc. auto. destruct v. apply IHtsc. auto.
 Qed.
 
-Lemma unfold_regular {v} {t : mu_term v} (twf : wf t) : regular_term_p (unfold t twf).
+Lemma decode_inf_path_prop {V n} (tsc : wf_bind_telescope V n) (t : wf_term (n_options n V))
+                           (p : InfiniteTerm.path (wf_unfold (wf_apply_telescope
+                             (wf_bind_telescope_forget_bind tsc) t)))
+                           : decode_inf_path_spec (wf_bind_telescope_forget_bind tsc) t p.
 Proof.
-  exists (unfold_subterms_n t). exists (unfold_subterms _ twf). constructor.
-  * intro. apply unfold_subterm_prop.
-  * intros. apply unfold_subterm_surj. auto.
+  rename t into t1. unfold decode_inf_path_spec.
+  remember (wf_unfold (wf_apply_telescope (wf_bind_telescope_forget_bind tsc) t1)) as t2.
+  rename Heqt2 into Heqt2'.
+  assert (Heqt2 : InfiniteTerm.eq t2 (wf_unfold (wf_apply_telescope (wf_bind_telescope_forget_bind tsc) t1))).
+  rewrite Heqt2'. reflexivity. clear Heqt2'.
+  generalize dependent n. induction p; intros.
+  - simpl. eexists. eexists. constructor. reflexivity. constructor. auto. constructor; intro.
+    symmetry. etransitivity. apply Heqt2. apply wf_apply_telescope_unfold. exfalso. eapply Nat.lt_irrefl. eauto.
+  - rename c into c2. destruct t1 as [ t1 twf ]. destruct t1 as [ v | c1 | ].
+    * destruct (NOptions.is_added_dec v) as [ Hv | Hv ].
+      + apply (Telescope.collapse_some tsc) in Hv. destruct Hv.
+        destruct x as [ m [ [ [ t1' twf' ] [ t1'' Ht1' ] ] tsc' ] ]. simpl in * |-.
+        specialize (wf_bind_telescope_forget_collapse tsc v). intro. rewrite H in H0. cbn in H0.
+        simpl. fold (wf_bind_telescope_forget tsc). rewrite H0. clear H0. subst t1'. inversion twf'.
+        rename c into c1. subst t1''. simpl. evar (t'' : term V). evar (twf'' : wf t'').
+        assert (Heqt2' : InfiniteTerm.eq (InfiniteTerm.Term (InfiniteTerm.ConsHead c2)) (unfold t'' twf'')).
+        etransitivity. apply Heqt2. etransitivity. apply wf_unfold_apply_telescope_collapse.
+        etransitivity. apply wf_bind_telescope_forget_bind_collapse. rewrite H. reflexivity.
+        apply wf_unfold_apply_telescope. simpl in t'', twf''. subst t''. generalize dependent twf''.
+        rewrite apply_telescope_bind. destruct c1 as [ f1 ts1 ]. intros. simpl in * |-.
+        rewrite InfiniteTerm.step_prop in Heqt2'. simpl in Heqt2'.
+        set (Hf := F_eq_dec f1 (InfiniteTerm.cons_f c2)).
+        refine (_ : exists m res, match Hf with left H => _ | right _ => _ end = Some (m, res) /\ _).
+        remember Hf. subst Hf. rename s into Hf. destruct Hf as [ Hf | Hf ].
+        specialize (IHp (S m) (ConsTelescope (existT _ (existT _ _ (BindWF _ H1)) (existT _ _ eq_refl)) tsc')
+          (existT _ _ (wf_cons_subterm H1 (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+        destruct IHp as [ m' [ res [ Hres [ Hm' [ Hmeq Hmlt ] ] ] ] ]. 
+        inversion Heqt2'. subst c2. clear ts3 ts4 H2 H3 H4. rename ts0 into ts2.
+        simpl in *. destruct Hf. rename f1 into f. inversion Heqt2'. clear f0 H0.
+        apply inj_pair2_eq_dec in H3; auto. apply inj_pair2_eq_dec in H4; auto. subst ts3 ts4.
+        etransitivity. apply H2. symmetry. etransitivity. apply wf_unfold_apply_telescope. simpl.
+        apply unfold_ext. repeat rewrite Vec.map_prop. repeat rewrite Vec.array_vec_array.
+        rewrite bind_assoc. etransitivity. symmetry. apply apply_telescope_inside. apply bind_ext.
+        intro. destruct v0 as [ v0 | ]; cbn. rewrite bind_map. simpl. rewrite bind_pure. reflexivity.
+        etransitivity. apply apply_telescope_bind. f_equal. simpl. rewrite <- Vec.map_prop. reflexivity.
+        evar (resT : Set). evar (res' : resT). subst resT. set (Hres' := Hres : res' = _).
+        refine (_ : exists m res, match res' with Some (m, p') => _ | None => _ end = Some (m, res) /\ _).
+        rewrite Hres'. clear Hres' res'. remember (Nat.eq_dec (S m) m') as cond.
+        destruct cond as [ cond | cond ]. subst m'. clear Hmlt. simpl. exists m. eexists.
+        constructor. rewrite Nat.sub_0_r. reflexivity. constructor.
+        apply Telescope.collapse_some_m in H. apply Nat.lt_le_incl. auto. constructor; intro.
+        apply Telescope.collapse_some_m in H. subst m. exfalso. eapply Nat.lt_irrefl. eauto.
+        exists v. eexists. eexists. constructor. etransitivity.
+        apply wf_bind_telescope_forget_bind_collapse. rewrite H. simpl. reflexivity.
+        etransitivity; [ | apply Hmeq; auto ]. unfold wf_unfold_subterm. simpl.
+        unfold refine_inf_path_cons. simpl. rewrite <- Heqs. simpl.
+        etransitivity. apply unfold_subterm_hlp_irrelevance. apply unfold_subterm_hlp_ext.
+        constructor. apply unfold_irrelevance. reflexivity.
+        exists m'. eexists. constructor. reflexivity. constructor. transitivity m.
+        inversion Hm'. exfalso. apply cond. auto. auto. apply Nat.lt_le_incl.
+        eapply Telescope.collapse_some_m. apply H. constructor; intro. subst m'.
+        apply Telescope.collapse_some_m in H. exfalso. apply cond. apply Nat.le_antisymm; auto.
+        destruct Hmlt as [ v' [ t' [ tsc'' [ Hv' Hp ] ] ] ]. inversion Hm'.
+        exfalso. apply cond. auto. apply le_n_S. auto.
+        destruct v' as [ v' | ]; simpl in *.
+        specialize (wf_bind_telescope_forget_bind_collapse tsc v). rewrite H. simpl. intro.
+        specialize (Telescope.collapse_compose _ v v' H2 Hv'). intro. destruct H3 as [ v'' Hv'' ].
+        exists v''. eexists. eexists. constructor. eauto. auto.
+        inversion Hv'. subst m'. apply inj_pair2_eq_dec in H4; auto. apply inj_pair2_eq_dec in H5; auto.
+        subst tsc'' t'. exists v. eexists. eexists. constructor. etransitivity.
+        apply wf_bind_telescope_forget_bind_collapse. rewrite H. reflexivity. simpl in *.
+        etransitivity; [ | apply Hp ]. apply unfold_subterm_hlp_irrelevance.
+        clear Heqs. destruct c2 as [ f2 ts2 ]. simpl in *. exfalso. apply Hf.
+        inversion Heqt2'. auto.
+      + apply (apply_telescope_not_added (wf_bind_telescope_forget tsc)) in Hv.
+        destruct Hv as [ v' Hv ].
+        assert (Heqt2' : InfiniteTerm.eq (InfiniteTerm.Term (InfiniteTerm.ConsHead c2))
+          (InfiniteTerm.Term (InfiniteTerm.VarHead v'))).
+        etransitivity. apply Heqt2. etransitivity. apply wf_unfold_apply_telescope.
+        evar (t' : term V). evar (twf' : wf t'). subst t'.
+        refine (_ : InfiniteTerm.eq (unfold (apply_telescope (wf_bind_telescope_forget tsc) _) twf') _).
+        generalize dependent twf'. simpl. rewrite Hv. intro. rewrite InfiniteTerm.step_prop at 1.
+        reflexivity. inversion Heqt2'.
+    * destruct c1 as [ f1 ts1 ]. simpl. unfold decode_inf_path_cons. simpl.
+      evar (t'' : term V). evar (twf'' : wf t'').
+      assert (Heqt2' : InfiniteTerm.eq (InfiniteTerm.Term (InfiniteTerm.ConsHead c2)) (unfold t'' twf'')).
+      etransitivity. apply Heqt2. apply wf_unfold_apply_telescope.
+      simpl in t'', twf''. subst t''. generalize dependent twf''.
+      rewrite apply_telescope_cons. intros. rewrite InfiniteTerm.step_prop in Heqt2'. simpl in * |-.
+      set (Hf' := F_eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
+      specialize (IHp _ tsc (existT _ _ (wf_cons_subterm twf
+        (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+      destruct IHp as [ m [ res [ Hres [ Hm [ Hmeq Hmlt ] ] ] ] ]. destruct c2 as [ f2 ts2 ].
+      simpl in *. destruct Hf. inversion Heqt2'. apply inj_pair2_eq_dec in H1; auto.
+      apply inj_pair2_eq_dec in H2; auto. subst f ts3 ts4. etransitivity. apply H0. symmetry.
+      etransitivity. apply wf_unfold_apply_telescope. apply unfold_ext. rewrite Vec.map_prop.
+      rewrite Vec.array_vec_array. reflexivity. simpl in * |-. rewrite Hres.
+      remember (Nat.eq_dec n m) as cond. destruct cond.
+      subst m. clear Hmlt Hm. exists n. eexists. constructor. reflexivity. constructor; auto.
+      constructor; intro. clear H. etransitivity; [ | apply Hmeq ]; auto.
+      unfold wf_unfold_subterm. simpl. unfold refine_inf_path_cons. simpl. rewrite <- Heqs.
+      reflexivity. exfalso. eapply Nat.lt_irrefl. eauto.
+      exists m. eexists. constructor. reflexivity. constructor. auto. constructor; intros; auto.
+      exfalso. apply n0. auto.
+      exfalso. apply Hf. destruct c2 as [ f2 ts2 ]. simpl in *. inversion Heqt2'. auto.
+    * destruct t1. 1, 3: inversion twf. simpl.
+      evar (t'' : term V). evar (twf'' : wf t'').
+      assert (Heqt2' : InfiniteTerm.eq (InfiniteTerm.Term (InfiniteTerm.ConsHead c2)) (unfold t'' twf'')).
+      etransitivity. apply Heqt2. apply wf_unfold_apply_telescope.
+      simpl in t'', twf''. subst t''. generalize dependent twf''.
+      rewrite apply_telescope_bind. destruct t as [ f1 ts1 ]. intros. simpl in *.
+      rewrite InfiniteTerm.step_prop in Heqt2'. simpl in * |-. unfold decode_inf_path_cons. simpl.
+      set (Hf' := F_eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
+      specialize (IHp _ (ConsTelescope (existT _ (existT _ _ twf) (existT _ _ eq_refl)) tsc)
+        (existT _ _ (wf_cons_subterm (wf_bind_nested twf) (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+      destruct IHp as [ m [ res [ Hres [ Hm [ Hmeq Hmlt ] ] ] ] ].
+      destruct c2 as [ f2 ts2 ]. simpl in *. destruct Hf.
+      inversion Heqt2'. apply inj_pair2_eq_dec in H1; auto. apply inj_pair2_eq_dec in H2; auto.
+      subst f ts3 ts4. etransitivity. apply H0. symmetry. etransitivity.
+      apply wf_unfold_apply_telescope. apply unfold_ext. repeat rewrite Vec.map_prop.
+      repeat rewrite Vec.array_vec_array. rewrite bind_assoc. etransitivity. symmetry.
+      apply apply_telescope_inside. apply bind_ext. intro. destruct v as [ v | ]; cbn.
+      rewrite bind_map. cbn. rewrite bind_pure. reflexivity.
+      etransitivity. apply apply_telescope_bind. f_equal. simpl. rewrite <- Vec.map_prop. auto.
+      evar (resT : Set). evar (res' : resT). subst resT. set (Hres' := Hres : res' = _).
+      refine (_ : exists m res, match res' with Some (m, p') => if Nat.eq_dec (S n) m then _ else _
+        | None => _ end = Some (m, res) /\ _).
+      rewrite Hres'. clear Hres' res'. remember (Nat.eq_dec (S n) m) as cond.
+      destruct cond; try subst m; eexists; eexists; constructor; eauto; constructor; simpl.
+      rewrite Nat.sub_0_r. auto. constructor; intros. clear H. etransitivity; [ | eapply Hmeq; auto ].
+      unfold wf_unfold_subterm. unfold refine_inf_path_cons. simpl. rewrite <- Heqs. reflexivity.
+      exfalso. eapply Nat.lt_irrefl. rewrite Nat.sub_0_r in H. eauto.
+      inversion Hm; auto. subst m. exfalso. apply n0. auto. constructor; intro.
+      subst m. clear n0 Heqcond Hmeq Hm. destruct Hmlt as [ v' [ t' [ tsc' [ Hv' Hp ] ] ] ]. auto. etransitivity; [ | apply Hp ].
+      generalize dependent Hv'. destruct v' as [ v' | ]; simpl; intro.
+      apply Telescope.collapse_some_m in Hv'. exfalso. eapply Nat.lt_irrefl. eauto.
+      inversion Hv'. apply inj_pair2_eq_dec in H0; auto. apply inj_pair2_eq_dec in H1; auto.
+      subst t' tsc'. reflexivity.
+      clear Hm Hmeq n0 Heqcond. destruct Hmlt as [ v' [ t' [ tsc' [ Hv' Hp ] ] ] ]. auto.
+      destruct v' as [ v' | ]. exists v'. eexists. eexists. constructor; eauto.
+      simpl in Hv'. inversion Hv'. subst m. exfalso. eapply Nat.lt_irrefl. eauto.
+      exfalso. apply Hf. inversion Heqt2'. auto.
+  - rename e into H. simpl. apply IHp. etransitivity. apply H. apply Heqt2.
+Qed.
+
+Definition path_of_inf_path {V} (t : term V) (twf : wf t) (p : InfiniteTerm.path (unfold t twf))
+                            : path 0 t :=
+match decode_inf_path NilTelescope t p with
+| Some (_, p) => refine_inf_path (t : term (n_options 0 V)) p
+| None => HerePath _
+end.
+
+Lemma path_of_inf_path_prop {V} (t : term V) (twf : wf t) (p : InfiniteTerm.path (unfold t twf))
+                            : InfiniteTerm.eq (unfold_subterm twf (path_of_inf_path t twf p))
+                              (InfiniteTerm.at_path p).
+Proof.
+  specialize (decode_inf_path_prop NilTelescope (existT _ t twf) p). cbn. intro.
+  destruct H as [ m [ res [ Hres [ Hm [ Hmeq _ ] ] ] ] ]. simpl in *. inversion Hm. subst m. clear Hm.
+  evar (res' : option (prod nat (list { f & fin (F_arity f) }))).
+  refine (_ : InfiniteTerm.eq (unfold_subterm twf (match res' with None => _ | Some (_, p) => _ end)) _).
+  rewrite (Hres : res' = _). clear res'. apply Hmeq. auto.
+Qed.
+
+Definition unfold_subterms {V} (t : term V) (twf : wf t) : list (InfiniteTerm.term V) :=
+  List.map (unfold_subterm twf) (paths t).
+
+Lemma unfold_subterms_prop {V} (t : term V) (twf : wf t)
+                           : List.Forall (fun t' => InfiniteTerm.is_subterm t' (unfold t twf))
+                             (unfold_subterms t twf).
+Proof.
+  apply List.Forall_forall. intros t' H. apply List.in_map_iff in H. destruct H as [ p H ].
+  destruct H as [ H _ ]. subst t'. apply unfold_subterm_prop.
+Qed.
+
+Theorem unfold_regular {V} {t : term V} (twf : wf t) : InfiniteTerm.is_regular (unfold t twf).
+Proof.
+  exists (unfold_subterms t twf). constructor. apply unfold_subterms_prop. intros.
+  destruct H as [ p Hp ]. specialize (path_of_inf_path_prop t twf p). intro.
+  apply List.Exists_map. eapply List.Exists_impl; [ | apply paths_prop ]. simpl.
+  intros. etransitivity. apply Hp. symmetry. rewrite H0. apply H.
 Qed.
 
 End MuTerm.

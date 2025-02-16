@@ -252,7 +252,7 @@ type Spec = Name -> Def
 
 prog :: Spec
 prog =
-  Prelude.error "AXIOM TO BE REALIZED"
+  Prelude.error "AXIOM TO BE REALIZED (semantics.SLDSearch.LanguageSLD.Prog)"
 
 data Cutting_mark =
    StopCutting
