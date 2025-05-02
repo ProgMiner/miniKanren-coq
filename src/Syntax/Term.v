@@ -7,36 +7,69 @@ Require Import Util.Fin.
 Import EqNotations.
 
 
-#[local] Parameter F : Set.
-#[local] Parameter F_arity : F -> nat.
-#[local] Axiom F_eq_dec : forall (f g : F), {f = g} + {f <> g}.
+Module Type FunctionalSymbol.
 
-#[local] Hint Resolve F_eq_dec : core.
+Parameter t : Set.
+Parameter arity : t -> nat.
+Axiom eq_dec : forall (f g : t), {f = g} + {f <> g}.
 
-#[local] Hint Resolve Nat.eq_dec : core.
+End FunctionalSymbol.
+
+Module Make (F : FunctionalSymbol).
+
+Local Hint Resolve F.eq_dec : core.
+Local Hint Resolve Nat.eq_dec : core.
 
 Record term_cons (T : Set) := TermCons
-  { term_cons_f : F
-  ; term_cons_ts : vec T (F_arity term_cons_f)
+  { term_cons_f : F.t
+  ; term_cons_ts : vec T (F.arity term_cons_f)
   }.
 
 Arguments TermCons {_} _ _.
 Arguments term_cons_f {_} _.
 Arguments term_cons_ts {_} _.
 
+Unset Elimination Schemes.
+
 Inductive simple_term (V : Set) : Set :=
 | VarST : V -> simple_term V
 | ConsST : term_cons (simple_term V) -> simple_term V
 .
 
+Set Elimination Schemes.
+
 Arguments VarST {_} _.
 Arguments ConsST {_} _.
+
+Definition simple_term_ind (V : Set) (P : simple_term V -> Prop)
+                           (var_st : forall v, P (VarST v))
+                           (cons_st : forall f ts, (forall i, P (Vec.v2a ts i))
+                                   -> P (ConsST (TermCons f ts)))
+                           : forall t, P t :=
+fix simple_term_ind t :=
+  match t as t' return P t' with
+  | VarST v => var_st v
+  | ConsST (TermCons f ts) =>
+    cons_st f ts (Vec.v2a_dep simple_term_ind ts)
+  end.
+
+Definition simple_term_rec (V : Set) (P : simple_term V -> Set)
+                           (var_st : forall v, P (VarST v))
+                           (cons_st : forall f ts, (forall i, P (Vec.v2a ts i))
+                                   -> P (ConsST (TermCons f ts)))
+                           : forall t, P t :=
+fix simple_term_ind t :=
+  match t as t' return P t' with
+  | VarST v => var_st v
+  | ConsST (TermCons f ts) =>
+    cons_st f ts (Vec.v2a_dep simple_term_ind ts)
+  end.
 
 Module InfiniteTerm.
 
 Record cons (T : Set) := Cons
-  { cons_f : F
-  ; cons_ts : array T (F_arity cons_f)
+  { cons_f : F.t
+  ; cons_ts : array T (F.arity cons_f)
   }.
 
 Arguments Cons {_} _ _.
@@ -63,7 +96,7 @@ Proof. destruct t. reflexivity. Qed.
 
 CoInductive eq {V} : term V -> term V -> Prop :=
 | VarEq : forall v, eq (Term (VarHead v)) (Term (VarHead v))
-| ConsEq : forall f (ts1 ts2 : array (term V) (F_arity f)), (forall i, eq (ts1 i) (ts2 i))
+| ConsEq : forall f (ts1 ts2 : array (term V) (F.arity f)), (forall i, eq (ts1 i) (ts2 i))
                -> eq (Term (ConsHead (Cons f ts1))) (Term (ConsHead (Cons f ts2)))
 .
 
@@ -73,13 +106,13 @@ match t as t' return eq t' t' with
 | Term (ConsHead (Cons f ts)) => ConsEq f ts ts (fun i => eq_refl (ts i))
 end.
 
-CoFixpoint eq_sym {V} {t1 t2 : term V} (p : eq t1 t2) : eq t2 t1 :=
+CoFixpoint eq_sym {V} [t1 t2 : term V] (p : eq t1 t2) : eq t2 t1 :=
 match p with
 | VarEq v => VarEq v
 | ConsEq f ts1 ts2 p => ConsEq f ts2 ts1 (fun i => eq_sym (p i))
 end.
 
-CoFixpoint eq_trans {V} {t1 t2 t3 : term V} (p : eq t1 t2) (q : eq t2 t3) : eq t1 t3.
+CoFixpoint eq_trans {V} [t1 t2 t3 : term V] (p : eq t1 t2) (q : eq t2 t3) : eq t1 t3.
 Proof.
   refine (
     match p in eq t1' t2' return eq t2' t3 -> eq t1' t3 with
@@ -95,9 +128,9 @@ Proof.
 Defined.
 
 Instance eq_equivalence {V} : RelationClasses.Equivalence (eq (V:=V)) :=
-  RelationClasses.Build_Equivalence _ eq_refl (fun _ _ => eq_sym) (fun _ _ _ => eq_trans).
+  RelationClasses.Build_Equivalence _ eq_refl eq_sym eq_trans.
 
-CoFixpoint map {V U : Set} (h : V -> U) (t : term V) : term U :=
+CoFixpoint map [V U : Set] (h : V -> U) (t : term V) : term U :=
 match t with
 | Term (VarHead v) => Term (VarHead (h v))
 | Term (ConsHead (Cons f ts)) => Term (ConsHead (Cons f (fun i => map h (ts i))))
@@ -303,27 +336,6 @@ Proof.
   apply apply_telescope_eq. apply subst_ext. auto.
 Qed.
 
-Module Test.
-
-#[local] Parameter f : F.
-#[local] Parameter g : F.
-#[local] Axiom f_arity : F_arity f = 2.
-
-CoFixpoint test1 : term nat := Term (ConsHead (Cons f (fun _ => test1))).
-
-CoFixpoint test2 n : term nat :=
-  let xs := fun (i : fin (F_arity f)) =>
-    match rew f_arity in i with
-    | None => Term (VarHead n)
-    | Some _ => test2 (S n)
-    end
-  in Term (ConsHead (Cons f xs)).
-
-CoFixpoint test3 : term False := Term (ConsHead (Cons f (fun _ => test3')))
-with test3' : term False := Term (ConsHead (Cons g (fun _ => test3))).
-
-End Test.
-
 End InfiniteTerm.
 
 Import (hints) InfiniteTerm.
@@ -452,6 +464,27 @@ Lemma map_as_bind {V U : Set} (h : V -> U) (t : term V) : map h t = bind (fun v 
 Proof. etransitivity. symmetry. apply bind_pure. apply bind_map. Qed.
 
 Definition subst {V : Set} (t : term V) := bind (option_rec (fun _ => term V) pure t).
+
+Fixpoint sequence_hlp {T : Set -> Set} (pure : forall [A : Set], A -> T A)
+                      (bind : forall [A B : Set], (A -> T B) -> T A -> T B)
+                      {V} n (t : term (n_options n (T V))) : T (term (n_options n V)) :=
+match t with
+| VarTerm v =>
+  let v := NOptions.sequence pure bind v in
+  bind (fun v => pure (VarTerm v)) v
+| ConsTerm (TermCons f ts) =>
+  let ts := Vec.map (sequence_hlp pure bind n) ts in
+  let ts := Vec.sequence pure bind ts in
+  bind (fun ts => pure (ConsTerm (TermCons f ts))) ts
+| BindTerm t =>
+  let t := sequence_hlp pure bind (S n) t in
+  bind (fun t => pure (BindTerm t)) t
+end.
+
+Definition sequence {T : Set -> Set} (pure : forall [A : Set], A -> T A)
+                    (bind : forall [A B : Set], (A -> T B) -> T A -> T B)
+                    {V} (t : term (T V)) : T (term V) :=
+  sequence_hlp pure bind 0 t.
 
 Inductive wf {V} : term V -> Prop :=
 | VarWF : forall v, wf (VarTerm v)
@@ -793,16 +826,16 @@ Definition decode_inf_path_cons {V n}
                                 (decode_inf_path : term (n_options n V)
                                                -> forall {t2 : InfiniteTerm.term V},
                                                   InfiniteTerm.path t2
-                                               -> option (prod nat (list { f & fin (F_arity f) })))
+                                               -> option (prod nat (list { f & fin (F.arity f) })))
                                 (c1 : term_cons (term (n_options n V)))
                                 (c2 : InfiniteTerm.cons (InfiniteTerm.term V))
-                                (i : fin (F_arity c2.(InfiniteTerm.cons_f)))
+                                (i : fin (F.arity c2.(InfiniteTerm.cons_f)))
                                 (p : InfiniteTerm.path (c2.(InfiniteTerm.cons_ts) i))
                                 (need_dec : bool)
-                                : option (prod nat (list { f & fin (F_arity f) })) :=
-match F_eq_dec c1.(term_cons_f) c2.(InfiniteTerm.cons_f) with
+                                : option (prod nat (list { f & fin (F.arity f) })) :=
+match F.eq_dec c1.(term_cons_f) c2.(InfiniteTerm.cons_f) with
 | left H =>
-  let t1 := Vec.v2a c1.(term_cons_ts) (rew <- [fun x => fin (F_arity x)] H in i) in
+  let t1 := Vec.v2a c1.(term_cons_ts) (rew <- [fun x => fin (F.arity x)] H in i) in
   match decode_inf_path t1 p with
   | None => None
   | Some (m, p') =>
@@ -817,11 +850,11 @@ Definition decode_inf_path_bind {V : Set}
   (decode_inf_path : forall {n} (tsc : telescope V n)
                      (t1 : term (n_options n V)) {t2 : InfiniteTerm.term V}
                      (p : InfiniteTerm.path t2),
-                     option (prod nat (list { f & fin (F_arity f) })))
+                     option (prod nat (list { f & fin (F.arity f) })))
   {n} (tsc : telescope V n) (t1 : term (n_options (S n) V))
-  (c2 : InfiniteTerm.cons (InfiniteTerm.term V)) (i : fin (F_arity c2.(InfiniteTerm.cons_f)))
+  (c2 : InfiniteTerm.cons (InfiniteTerm.term V)) (i : fin (F.arity c2.(InfiniteTerm.cons_f)))
   (p : InfiniteTerm.path (c2.(InfiniteTerm.cons_ts) i))
-  : option (prod nat (list { f & fin (F_arity f) })) :=
+  : option (prod nat (list { f & fin (F.arity f) })) :=
 let tsc := ConsTelescope (BindTerm t1) tsc in
 match t1 with
 | ConsTerm c1 => decode_inf_path_cons (decode_inf_path tsc) c1 c2 i p true
@@ -830,7 +863,7 @@ end.
 
 Fixpoint decode_inf_path {V n} (tsc : telescope V n) (t1 : term (n_options n V))
                          {t2 : InfiniteTerm.term V} (p : InfiniteTerm.path t2)
-                         : option (prod nat (list { f & fin (F_arity f) })) :=
+                         : option (prod nat (list { f & fin (F.arity f) })) :=
 match p with
 | InfiniteTerm.HerePath _ => Some (n, nil)
 | InfiniteTerm.ConsPath c2 i p =>
@@ -849,18 +882,18 @@ end.
 
 Definition refine_inf_path_cons {V n}
                                 (refine_inf_path : forall (t : term (n_options n V)),
-                                                   list { f & fin (F_arity f) } -> path n t)
+                                                   list { f & fin (F.arity f) } -> path n t)
                                 (c : term_cons (term (n_options n V)))
-                                f (i : fin (F_arity f)) (p : list { f & fin (F_arity f) })
+                                f (i : fin (F.arity f)) (p : list { f & fin (F.arity f) })
                                 : path n (ConsTerm c) :=
-match F_eq_dec c.(term_cons_f) f with
+match F.eq_dec c.(term_cons_f) f with
 | left Hf =>
-  let i' := rew <- [fun x => fin (F_arity x)] Hf in i in
+  let i' := rew <- [fun x => fin (F.arity x)] Hf in i in
   ConsPath c i' (refine_inf_path (Vec.v2a c.(term_cons_ts) i') p)
 | right _ => HerePath _
 end.
 
-Fixpoint refine_inf_path {V n} (t : term (n_options n V)) (p : list { f & fin (F_arity f) })
+Fixpoint refine_inf_path {V n} (t : term (n_options n V)) (p : list { f & fin (F.arity f) })
                          : path n t :=
 match p with
 | nil => HerePath t
@@ -1042,11 +1075,11 @@ Proof.
         apply wf_unfold_apply_telescope. simpl in t'', twf''. subst t''. generalize dependent twf''.
         rewrite apply_telescope_bind. destruct c1 as [ f1 ts1 ]. intros. simpl in * |-.
         rewrite InfiniteTerm.step_prop in Heqt2'. simpl in Heqt2'.
-        set (Hf := F_eq_dec f1 (InfiniteTerm.cons_f c2)).
+        set (Hf := F.eq_dec f1 (InfiniteTerm.cons_f c2)).
         refine (_ : exists m res, match Hf with left H => _ | right _ => _ end = Some (m, res) /\ _).
         remember Hf. subst Hf. rename s into Hf. destruct Hf as [ Hf | Hf ].
         specialize (IHp (S m) (ConsTelescope (existT _ (existT _ _ (BindWF _ H1)) (existT _ _ eq_refl)) tsc')
-          (existT _ _ (wf_cons_subterm H1 (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+          (existT _ _ (wf_cons_subterm H1 (rew <- [fun x => fin (F.arity x)] Hf in i)))).
         destruct IHp as [ m' [ res [ Hres [ Hm' [ Hmeq Hmlt ] ] ] ] ]. 
         inversion Heqt2'. subst c2. clear ts3 ts4 H2 H3 H4. rename ts0 into ts2.
         simpl in *. destruct Hf. rename f1 into f. inversion Heqt2'. clear f0 H0.
@@ -1100,9 +1133,9 @@ Proof.
       etransitivity. apply Heqt2. apply wf_unfold_apply_telescope.
       simpl in t'', twf''. subst t''. generalize dependent twf''.
       rewrite apply_telescope_cons. intros. rewrite InfiniteTerm.step_prop in Heqt2'. simpl in * |-.
-      set (Hf' := F_eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
+      set (Hf' := F.eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
       specialize (IHp _ tsc (existT _ _ (wf_cons_subterm twf
-        (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+        (rew <- [fun x => fin (F.arity x)] Hf in i)))).
       destruct IHp as [ m [ res [ Hres [ Hm [ Hmeq Hmlt ] ] ] ] ]. destruct c2 as [ f2 ts2 ].
       simpl in *. destruct Hf. inversion Heqt2'. apply inj_pair2_eq_dec in H1; auto.
       apply inj_pair2_eq_dec in H2; auto. subst f ts3 ts4. etransitivity. apply H0. symmetry.
@@ -1123,9 +1156,9 @@ Proof.
       simpl in t'', twf''. subst t''. generalize dependent twf''.
       rewrite apply_telescope_bind. destruct t as [ f1 ts1 ]. intros. simpl in *.
       rewrite InfiniteTerm.step_prop in Heqt2'. simpl in * |-. unfold decode_inf_path_cons. simpl.
-      set (Hf' := F_eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
+      set (Hf' := F.eq_dec f1 (InfiniteTerm.cons_f c2)). remember Hf'. destruct s as [ Hf | Hf ]; subst Hf'.
       specialize (IHp _ (ConsTelescope (existT _ (existT _ _ twf) (existT _ _ eq_refl)) tsc)
-        (existT _ _ (wf_cons_subterm (wf_bind_nested twf) (rew <- [fun x => fin (F_arity x)] Hf in i)))).
+        (existT _ _ (wf_cons_subterm (wf_bind_nested twf) (rew <- [fun x => fin (F.arity x)] Hf in i)))).
       destruct IHp as [ m [ res [ Hres [ Hm [ Hmeq Hmlt ] ] ] ] ].
       destruct c2 as [ f2 ts2 ]. simpl in *. destruct Hf.
       inversion Heqt2'. apply inj_pair2_eq_dec in H1; auto. apply inj_pair2_eq_dec in H2; auto.
@@ -1144,8 +1177,8 @@ Proof.
       unfold wf_unfold_subterm. unfold refine_inf_path_cons. simpl. rewrite <- Heqs. reflexivity.
       exfalso. eapply Nat.lt_irrefl. rewrite Nat.sub_0_r in H. eauto.
       inversion Hm; auto. subst m. exfalso. apply n0. auto. constructor; intro.
-      subst m. clear n0 Heqcond Hmeq Hm. destruct Hmlt as [ v' [ t' [ tsc' [ Hv' Hp ] ] ] ]. auto. etransitivity; [ | apply Hp ].
-      generalize dependent Hv'. destruct v' as [ v' | ]; simpl; intro.
+      subst m. clear n0 Heqcond Hmeq Hm. destruct Hmlt as [ v' [ t' [ tsc' [ Hv' Hp ] ] ] ]. auto.
+      etransitivity; [ | apply Hp ]. generalize dependent Hv'. destruct v' as [ v' | ]; simpl; intro.
       apply Telescope.collapse_some_m in Hv'. exfalso. eapply Nat.lt_irrefl. eauto.
       inversion Hv'. apply inj_pair2_eq_dec in H0; auto. apply inj_pair2_eq_dec in H1; auto.
       subst t' tsc'. reflexivity.
@@ -1169,7 +1202,7 @@ Lemma path_of_inf_path_prop {V} (t : term V) (twf : wf t) (p : InfiniteTerm.path
 Proof.
   specialize (decode_inf_path_prop NilTelescope (existT _ t twf) p). cbn. intro.
   destruct H as [ m [ res [ Hres [ Hm [ Hmeq _ ] ] ] ] ]. simpl in *. inversion Hm. subst m. clear Hm.
-  evar (res' : option (prod nat (list { f & fin (F_arity f) }))).
+  evar (res' : option (prod nat (list { f & fin (F.arity f) }))).
   refine (_ : InfiniteTerm.eq (unfold_subterm twf (match res' with None => _ | Some (_, p) => _ end)) _).
   rewrite (Hres : res' = _). clear res'. apply Hmeq. auto.
 Qed.
@@ -1194,3 +1227,38 @@ Proof.
 Qed.
 
 End MuTerm.
+
+End Make.
+
+Module Test.
+
+Module F.
+
+Definition t := nat.
+Definition arity (x : t) : nat := 2.
+Definition eq_dec := Nat.eq_dec.
+
+End F.
+
+Module X := Make F.
+
+Module InfiniteTerm.
+
+Import X.InfiniteTerm.
+
+CoFixpoint test1 : term nat := Term (ConsHead (Cons 0 (fun _ => test1))).
+
+CoFixpoint test2 n : term nat :=
+  let xs := fun (i : fin 2) =>
+    match i with
+    | None => Term (VarHead n)
+    | Some _ => test2 (S n)
+    end
+  in Term (ConsHead (Cons 0 xs)).
+
+CoFixpoint test3 : term False := Term (ConsHead (Cons 0 (fun _ => test3')))
+with test3' : term False := Term (ConsHead (Cons 1 (fun _ => test3))).
+
+End InfiniteTerm.
+
+End Test.
