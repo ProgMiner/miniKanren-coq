@@ -32,7 +32,7 @@ Proof.
   all: right; intro H; inversion H; auto.
 Qed.
 
-Definition var_set := set name.
+Definition var_set : Set := list name.
 
 Definition var_set_empty : var_set := empty_set name.
 Definition var_set_add : name -> var_set -> var_set := set_add name_eq_dec.

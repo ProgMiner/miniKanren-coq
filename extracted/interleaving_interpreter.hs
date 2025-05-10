@@ -251,7 +251,7 @@ type Spec = Name -> Def
 
 prog :: Spec
 prog =
-  Prelude.error "AXIOM TO BE REALIZED"
+  Prelude.error "AXIOM TO BE REALIZED (semantics.Syntax.Language.Prog)"
 
 data Nt_state =
    Leaf Goal Subst Nat
