@@ -86,6 +86,16 @@ Proof.
       apply set_union_intro2. apply IHts. exists ts''. auto.
 Qed.
 
+Definition var_map (T : Set) : Set := name -> option T.
+
+Definition var_map_empty {T} : var_map T := fun _ => None.
+
+Definition var_map_add [T] (m : var_map T) (x : name) (v : T) : var_map T :=
+  fun y => if name_eq_dec x y then Some v else m y.
+
+Definition var_map_remove [T] (m : var_map T) (x : name) : var_map T :=
+  fun y => if name_eq_dec x y then None else m y.
+
 
 (* Equation System *)
 
@@ -306,7 +316,7 @@ Definition in_eq_sys_vars (n : name) (s : eq_sys) : Prop :=
   in_eq_sys_dom n s \/ in_eq_sys_rhs_vars n s \/ in_eq_sys_links n s.
 
 Lemma in_eq_sys_vars_add_root s n1 n2 t (H : in_eq_sys_vars n1 ((n2, RootESNode t) :: s))
-                     : in_eq_sys_vars n1 s \/ n1 = n2 \/ In n1 (fv_term_head t).
+                            : in_eq_sys_vars n1 s \/ n1 = n2 \/ In n1 (fv_term_head t).
 Proof.
   destruct H as [ H | [ H | H ] ].
   * apply in_eq_sys_dom_prop in H. apply set_add_elim in H. destruct H. auto.
@@ -1144,7 +1154,7 @@ Proof.
   apply eq_sys_inf_subst_extend; auto.
 Qed.
 
-Lemma eq_sys_apply_dom_erase s n t (H1 : eq_sys_wf s)
+Lemma eq_sys_apply_dom_erase n s t (H1 : eq_sys_wf s)
                            : inf_term_eq (eq_sys_apply s t)
                                          (apply_inf_subst (inf_subst_singleton n (eq_sys_image s n))
                                                           (eq_sys_apply (eq_sys_dom_erase s n) t)).
@@ -1163,6 +1173,281 @@ Proof.
     intros n' _. unfold inf_subst_singleton. destruct (name_eq_dec n n'); auto. subst n'.
     rewrite eq_sys_image_no. auto. apply in_eq_sys_dom_inv. auto.
 Qed.
+
+Lemma eq_sys_image_dom_erase n s n' (H1 : eq_sys_wf s)
+                           : inf_term_eq (eq_sys_image s n')
+                                         (apply_inf_subst (inf_subst_singleton n (eq_sys_image s n))
+                                                          (eq_sys_image (eq_sys_dom_erase s n) n')).
+Proof. apply (eq_sys_apply_dom_erase n s (Var n')). auto. Qed.
+
+Fixpoint eq_sys_mu_image' (fuel : nat) (s : eq_sys) (n : name) : mu_term' name :=
+match fuel with
+| 0 => VarMu' n
+| S fuel =>
+  match eq_sys_find s n with
+  | (n, None) => VarMu' n
+  | (_, Some (CstHead c)) => CstMu' c
+  | (n, Some (ConHead c l r)) =>
+    let s := eq_sys_dom_erase s n in
+    let t := ConMu' c (eq_sys_mu_image' fuel s l) (eq_sys_mu_image' fuel s r) in
+    BndMu' (mu_term'_map (mu_term_to_mu_term'_f n) t)
+  end
+end.
+
+Lemma eq_sys_mu_image'_wf fuel s n : mu_term_wf' (eq_sys_mu_image' fuel s n).
+Proof.
+  revert s n. induction fuel; intros. constructor. simpl.
+  destruct (eq_sys_find s n) as [ n' [ [ c | c l r ] | ] ]; constructor.
+  constructor; apply mu_term'_map_wf; apply IHfuel.
+Qed.
+
+(*
+Lemma eq_sys_mu_image'_unfold_aux fuel s n (H1 : eq_sys_wf s)
+                                  (H2 : var_set_size (eq_sys_dom s) <= fuel)
+                                  (H3 : mu_term_wf' (eq_sys_mu_image' fuel s n))
+                                : inf_term_eq (mu_unfold' _ H3) (eq_sys_image s n).
+*)
+
+(*
+Lemma eq_sys_mu_image'_unfold fuel s n (H1 : eq_sys_wf s)
+                              (H2 : var_set_size (eq_sys_dom s) <= fuel)
+                              (H3 : mu_term_wf' (eq_sys_mu_image' fuel s n))
+                            : inf_term_eq (mu_unfold' _ H3) (eq_sys_image s n).
+Proof.
+  generalize dependent n. generalize dependent s. induction fuel; intros.
+  * good_inversion H2. apply length_zero_iff_nil in H0.
+    assert (s = []). destruct s as [ | [ n' node ] s ].
+    auto. apply set_add_not_empty in H0. inversion H0. subst s. clear H0.
+    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl. auto.
+  * rewrite inf_term_step_prop. revert H3. simpl.
+    remember (eq_sys_find s n) as res. symmetry in Heqres.
+    destruct res as [ n' [ [ c | c l r ] | ] ]; simpl; intros;
+      rewrite inf_term_step_prop at 1; simpl; auto.
+    generalize (mu_unfold_step'_wf H3). intro H4.
+    good_inversion H3. constructor; symmetry.
+    - etransitivity. apply (eq_sys_image_dom_erase n'). auto. symmetry.
+      refine ((_ : forall H5, inf_term_eq (mu_unfold' _ H5) _) _).
+      rewrite mu_term'_bind_map_r. intro. unshelve eapply mu_unfold'_bind'.
+      + apply eq_sys_mu_image'_wf.
+      + intro x. unfold mu_term_to_mu_term'_f. destruct (name_eq_dec n' x); constructor; auto.
+      + apply IHfuel. apply eq_sys_dom_erase_wf. auto.
+        apply le_S_n. rewrite <- eq_sys_dom_erase_size. auto.
+        eexists. eapply eq_sys_find_some. eauto.
+      + intro x. simpl. unfold inf_subst_singleton, mu_term_to_mu_term'_f.
+        rewrite inf_term_step_prop at 1. destruct (name_eq_dec n' x); simpl; auto.
+        subst x. symmetry. unshelve erewrite (_ : n' = fst (eq_sys_find s n)) at 1.
+        rewrite Heqres. auto. etransitivity. symmetry.
+        destruct (H1 n) as [ p H ]. eapply eq_sys_image_find. eauto.
+        symmetry. rewrite inf_term_step_prop. simpl. rewrite Heqres. simpl.
+        constructor.
+*)
+
+(*
+Lemma eq_sys_mu_image'_unfold fuel s n (H1 : eq_sys_wf s)
+                              (H2 : var_set_size (eq_sys_dom s) <= fuel)
+                              (H3 : mu_term_wf (eq_sys_mu_image' fuel s n))
+                            : inf_term_eq (mu_unfold _ H3) (eq_sys_image s n).
+Proof.
+  generalize dependent n. generalize dependent s. induction fuel; intros.
+  * good_inversion H2. apply length_zero_iff_nil in H0. destruct s as [ | [ n' node ] s ].
+    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl. auto.
+    simpl in H0. apply set_add_not_empty in H0. inversion H0.
+  * rewrite inf_term_step_prop. revert H3. simpl.
+    remember (eq_sys_find s n) as res. symmetry in Heqres.
+    destruct res as [ n' [ [ c | c l r ] | ] ]; simpl; intros;
+      rewrite inf_term_step_prop at 1; simpl; auto.
+    constructor.
+    - etransitivity; [ | apply eq_sys_image_dom_erase_extend; auto; eapply eq_sys_find_some; eauto ].
+      symmetry. etransitivity.
+      apply eq_sys_image_extend; try apply eq_sys_wf_add_root; try apply eq_sys_dom_erase_wf; auto.
+      apply in_eq_sys_dom_inv. intro. apply in_eq_sys_dom_prop in H.
+      apply eq_sys_dom_erase_prop in H. apply set_remove_iff in H; auto.
+      destruct H. contradiction.
+      symmetry.
+      ...
+*)
+
+(*
+Fixpoint eq_sys_mu_image_hlp (s : eq_sys) (fuel : nat) (vis : var_map bool) (x : name)
+                           : mu_term * (var_map bool) :=
+match fuel with
+| 0 => (VarMu x, vis)
+| S fuel =>
+  let (x, t) := eq_sys_find s x in
+  if vis x then (VarMu x, var_map_add vis x true)
+  else match t with
+  | None => (VarMu x, vis)
+  | Some (CstHead n) => (CstMu n, vis)
+  | Some (ConHead n l r) =>
+    let (l, vis) := eq_sys_mu_image_hlp s fuel (var_map_add vis x false) l in
+    let (r, vis) := eq_sys_mu_image_hlp s fuel vis r in
+    match vis x with
+    | Some true => (BndMu x (ConMu n l r), var_map_remove vis x)
+    | _ => (ConMu n l r, var_map_remove vis x)
+    end
+  end
+end.
+
+Lemma eq_sys_mu_image_hlp_wf s fuel vis x : mu_term_wf (fst (eq_sys_mu_image_hlp s fuel vis x)).
+Proof.
+  revert x vis. induction fuel; intros. constructor. simpl.
+  remember (eq_sys_find s x) as res. symmetry in Heqres. destruct res as [ x' t ].
+  remember (vis x') as check. symmetry in Heqcheck. destruct check. constructor.
+  destruct t as [ [ n | n l r ] | ]; try constructor.
+  remember (eq_sys_mu_image_hlp s fuel (var_map_add vis x' false) l) as l'.
+  symmetry in Heql'. destruct l' as [ l' vis1 ].
+  remember (eq_sys_mu_image_hlp s fuel vis1 r) as r'.
+  symmetry in Heqr'. destruct r' as [ r' vis2 ].
+  unshelve erewrite (_ : l' = fst (eq_sys_mu_image_hlp s fuel (var_map_add vis x' false) l)).
+  rewrite Heql'. auto.
+  unshelve erewrite (_ : r' = fst (eq_sys_mu_image_hlp s fuel vis1 r)).
+  rewrite Heqr'. auto.
+  destruct (vis2 x') as [ [ | ] | ]; constructor; try constructor; apply IHfuel.
+Qed.
+*)
+
+(*
+Lemma eq_sys_mu_image_hlp_unfold s s' fuel vis vis' vis'' x t (H1 : eq_sys_wf s)
+                                 (H2 : eq_sys_mu_image_hlp s fuel vis x = (t, vis'))
+                                 (H3 : var_set_size (eq_sys_dom s) <= fuel + var_set_size vis'')
+                                 (H4 : NoDup vis'') (H5 : incl vis'' (eq_sys_dom s))
+                                 (H6 : mu_subst_wf s' t)
+                                 (H7 : mu_term_wf (apply_mu_subst s' t))
+                                 (H8 : forall x, vis x <> None <-> In x vis'')
+                                 (H9 : forall x, in_mu_subst_dom x s' <-> In x vis'')
+                                 (H10 : forall x, mu_term_wf (s' x))
+                                 (H11 : forall x, in_mu_subst_dom x s'
+                                               -> inf_term_eq (mu_unfold (s' x) (H10 x))
+                                                              (eq_sys_image s x))
+                               : inf_term_eq (mu_unfold (apply_mu_subst s' t) H7)
+                                             (eq_sys_image s x)
+                              /\ forall x, vis' x <> None <-> In x vis''.
+Proof.
+  assert (H12 : mu_term_wf t). {
+    unshelve erewrite (_ : t = (fst (eq_sys_mu_image_hlp s fuel vis x))).
+    rewrite H2. auto. apply eq_sys_mu_image_hlp_wf.
+  }
+  generalize dependent x. generalize dependent vis''. intro.
+  revert fuel vis vis'. generalize dependent s'. revert vis''.
+  induction t; simpl; intros; (destruct fuel; [ good_inversion H2 | simpl in H2 ]).
+  * constructor; auto. destruct (in_dec name_eq_dec n (eq_sys_dom s)).
+    - etransitivity; [ | apply H11 ]. apply mu_unfold_irrelevance.
+      apply H9. apply NoDup_length_incl in H3; auto.
+    - revert H7. unshelve erewrite (_ : s' n = VarMu n). apply in_mu_subst_dom_inv. intro.
+      apply n0. apply H5. apply H9. auto. intros.
+      rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl.
+      rewrite eq_sys_find_no. reflexivity. apply in_eq_sys_dom_inv.
+      apply in_eq_sys_dom_prop'. auto.
+  * remember (eq_sys_find s x) as res. symmetry in Heqres. destruct res as [ x' t ].
+    remember (vis x') as cond. symmetry in Heqcond.
+    destruct cond as [ cond | ]; [ | destruct t as [ [ | ] | ] ].
+    - good_inversion H2. constructor.
+      symmetry. etransitivity. destruct (H1 x) as [ p H ]. eapply eq_sys_image_find. eauto.
+      rewrite Heqres. simpl. etransitivity. symmetry. apply H11. apply H9. apply H8.
+      intro. rewrite Heqcond in H. inversion H. apply mu_unfold_irrelevance.
+      intro y. constructor; intro. apply H8. intro. apply H. unfold var_map_add. rewrite H0.
+      destruct (name_eq_dec n y); auto. subst y. congruence.
+      apply H8 in H. intro. apply H. unfold var_map_add in H0.
+      destruct (name_eq_dec n y); auto. inversion H0.
+    - inversion H2.
+    - destruct (eq_sys_mu_image_hlp s fuel (var_map_add vis x' false) n1) as [ l vis1 ].
+      destruct (eq_sys_mu_image_hlp s fuel vis1 n2) as [ r vis2 ].
+      destruct (vis2 x') as [ [ | ] | ]; inversion H2.
+    - good_inversion H2. constructor; auto.
+      rewrite inf_term_step_prop. simpl. rewrite Heqres. simpl.
+      revert H7. unshelve erewrite (_ : s' n = VarMu n). apply in_mu_subst_dom_inv. intro.
+      apply H9 in H. apply H8 in H. apply H. auto. intros.
+      rewrite inf_term_step_prop at 1. simpl. auto.
+  * remember (eq_sys_find s x) as res. symmetry in Heqres. destruct res as [ x' t ].
+    remember (vis x') as cond. symmetry in Heqcond. destruct cond as [ cond | ]. inversion H2.
+    destruct t as [ [ n' | n' l r ] | ].
+    - good_inversion H2. constructor; auto.
+      rewrite inf_term_step_prop. simpl. rewrite Heqres. simpl.
+      rewrite inf_term_step_prop at 1. simpl. auto.
+    - destruct (eq_sys_mu_image_hlp s fuel (var_map_add vis x' false) l) as [ l' vis1 ].
+      destruct (eq_sys_mu_image_hlp s fuel vis1 r) as [ r' vis2 ].
+      destruct (vis2 x') as [ [ | ] | ]; inversion H2.
+    - inversion H2.
+  * remember (eq_sys_find s x) as res. symmetry in Heqres. destruct res as [ x' t ].
+    remember (vis x') as cond. symmetry in Heqcond. destruct cond as [ cond | ]. inversion H2.
+    destruct t as [ [ n' | n' l r ] | ]; [ inversion H2 | | inversion H2 ].
+    remember (eq_sys_mu_image_hlp s fuel (var_map_add vis x' false) l) as res1.
+    symmetry in Heqres1. destruct res1 as [ l' vis1 ].
+    remember (eq_sys_mu_image_hlp s fuel vis1 r) as res2.
+    symmetry in Heqres2. destruct res2 as [ r' vis2 ].
+    remember (vis2 x') as cond'. symmetry in Heqcond'.
+    destruct cond' as [ [ | ] | ]; good_inversion H2.
+    - set (vis''' := x'::vis'').
+      assert (H3' : var_set_size (eq_sys_dom s) <= fuel + var_set_size (x' :: vis'')). {
+        simpl. rewrite <- Nat.add_succ_comm. auto.
+      }
+      assert (H4' : NoDup vis'''). constructor; auto. intro. apply H8 in H. apply H. auto.
+      assert (H5' : incl vis''' (eq_sys_dom s)). {
+        intros y H. destruct H; auto. subst y. apply in_eq_sys_dom_prop.
+        exists (RootESNode (ConHead n l r)). eapply eq_sys_find_some. eauto.
+      }
+      set (s'' := mu_subst_compose s' (mu_subst_singleton x' (ConMu n t1 t2))).
+      assert (H10' : forall y, mu_term_wf (s'' y)). {
+        intro. apply apply_mu_subst_wf; auto. unfold mu_subst_singleton.
+        destruct (name_eq_dec x' y). auto. constructor.
+      }
+      assert (H6t1 : mu_subst_wf s'' t1). {
+        admit.
+      }
+      assert (H7t1 : mu_term_wf (apply_mu_subst s'' t1)). {
+        unfold s''. rewrite mu_subst_compose_prop. apply apply_mu_subst_wf. auto.
+        apply apply_mu_subst_wf. intro y. unfold mu_subst_singleton.
+        destruct (name_eq_dec x' y). auto. constructor.
+        good_inversion H12. auto.
+        admit.
+      }
+      assert (H7t2 : mu_term_wf (apply_mu_subst s'' t2)). {
+        admit.
+        (*
+        unfold s''. rewrite mu_subst_compose_prop. apply apply_mu_subst_wf.
+        intro y. unfold mu_subst_singleton. destruct (name_eq_dec x' y). constructor. auto.
+        constructor. good_inversion H7. auto. intros y Hy. apply H6. apply set_union_intro2. auto.
+        *)
+      }
+      unshelve eapply (IHt1 _ (x'::vis'') s'') in Heqres1; eauto.
+      good_inversion H12. auto.
+      unshelve eapply (IHt2 _ (x'::vis'') s'') in Heqres2; eauto.
+      good_inversion H12. auto.
+      constructor. rewrite inf_term_step_prop. simpl. rewrite Heqres. simpl.
+      rewrite inf_term_step_prop at 1. simpl. constructor.
+      + etransitivity; [ | apply Heqres1 ]. clear Heqres1. revert H7t1. unfold s''.
+        rewrite mu_subst_compose_prop.
+        rewrite (apply_mu_subst_ext (mu_subst_singleton _ _) mu_subst_trivial).
+        rewrite apply_mu_subst_trivial. intro. apply mu_unfold_irrelevance.
+        intros y Hy. unfold mu_subst_singleton. destruct (name_eq_dec x' y). admit. auto.
+        admit.
+      + etransitivity; [ | apply Heqres2 ]. clear Heqres2. revert H7t2. unfold s''.
+        rewrite mu_subst_compose_prop.
+        rewrite (apply_mu_subst_ext (mu_subst_singleton _ _) mu_subst_trivial).
+        rewrite apply_mu_subst_trivial. intro. apply mu_unfold_irrelevance.
+        intros y Hy. unfold mu_subst_singleton. destruct (name_eq_dec x' y). admit. auto.
+        admit.
+      + intro y. constructor; intro.
+        unfold var_map_remove in H. destruct (name_eq_dec x' y). contradiction.
+        apply Heqres2 in H. destruct H. contradiction. auto.
+        unfold var_map_remove. destruct (name_eq_dec x' y).
+        apply H8 in H. intro. apply H. subst y. auto.
+        apply Heqres2. right. auto.
+      + admit.
+      + 
+      constructor.
+*)
+
+(*
+Definition eq_sys_mu_image (s : eq_sys) (x : name) : mu_term :=
+  fst (eq_sys_mu_image_hlp s (length s) var_map_empty x).
+
+Lemma eq_sys_mu_image_wf s x : mu_term_wf (eq_sys_mu_image s x).
+Proof. apply eq_sys_mu_image_hlp_wf. Qed.
+
+Lemma eq_sys_mu_image'_wf s x : mu_term_wf (eq_sys_mu_image' s x).
+Proof. apply eq_sys_mu_image_hlp'_wf. Qed.
+*)
 
 Definition eq_sys_union (s : eq_sys) (x y : name) : option (term_head * term_head) * eq_sys :=
 match eq_sys_find s x, eq_sys_find s y with
@@ -2396,12 +2681,12 @@ Lemma eq_sys_image_compose_add_link_over_root s1 s2 x y z t1 t2 (H1 : eq_sys_wf 
   (H5 : eq_sys_lookup s2 y = Some (RootESNode t2))
   (H6 : inf_term_eq (apply_inf_subst s1 (eq_sys_apply ((x, LinkESNode y) :: s2) (term_head_to_term t1)))
                     (apply_inf_subst s1 (eq_sys_apply ((x, LinkESNode y) :: s2) (term_head_to_term t2))))
-: inf_term_eq (apply_inf_subst s1 (eq_sys_image ((x, LinkESNode y) :: s2) z))
-              (apply_inf_subst s1 (eq_sys_image s2 z)).
+: inf_term_eq (apply_inf_subst s1 (eq_sys_image s2 z))
+              (apply_inf_subst s1 (eq_sys_image ((x, LinkESNode y) :: s2) z)).
 Proof.
   revert z. cofix IHz. intro.
-  rewrite (inf_term_step_prop (eq_sys_image _ _)).
-  rewrite (inf_term_step_prop (eq_sys_image s2 _)). simpl.
+  rewrite (inf_term_step_prop (eq_sys_image s2 _)).
+  rewrite (inf_term_step_prop (eq_sys_image ((x, LinkESNode y) :: s2) _)). simpl.
   remember (eq_sys_find ((x, LinkESNode y) :: s2) z) as res1. symmetry in Heqres1.
   remember (eq_sys_find s2 z) as res2. symmetry in Heqres2. destruct res2 as [ z' t2' ].
   remember (name_eq_dec z' x) as dec. symmetry in Heqdec. destruct dec.
@@ -2426,8 +2711,8 @@ Proof.
       good_inversion H6.
     reflexivity.
     rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl. constructor.
-    - eapply inf_term_eq_trans. symmetry. eauto. apply IHz.
-    - eapply inf_term_eq_trans. symmetry. eauto. apply IHz.
+    - eapply inf_term_eq_trans. apply IHz. eauto.
+    - eapply inf_term_eq_trans. apply IHz. eauto.
   * rename n into H7.
     assert (res1 = (z', t2')). {
       destruct (H1 z) as [ pz Hpz ]. set (Hpz' := Hpz).
@@ -2468,8 +2753,8 @@ Proof.
   destruct (name_eq_dec x' y'). inversion H2.
   destruct t1' as [ t1' | ]; destruct t2' as [ t2' | ]; good_inversion H2; simpl in *.
   destruct H3 as [ s2 [ H3 H5 ] ]. exists s2. rename n into Hn.
-  assert (Hs1 : forall z, inf_term_eq (apply_inf_subst s2 (eq_sys_image ((x', LinkESNode y') :: s1) z))
-                                      (apply_inf_subst s2 (eq_sys_image s1 z))). {
+  assert (Hs1 : forall z, inf_term_eq (apply_inf_subst s2 (eq_sys_image s1 z))
+                                      (apply_inf_subst s2 (eq_sys_image ((x', LinkESNode y') :: s1) z))). {
     intro. eapply eq_sys_image_compose_add_link_over_root; eauto.
     * eapply eq_sys_find_some. eauto.
     * eapply eq_sys_find_some. eauto.
@@ -2491,8 +2776,8 @@ Proof.
     etransitivity. symmetry. apply eq_sys_inf_subst_prop.
     destruct (H1 y) as [ p H ]. eapply eq_sys_image_find; eauto.
     rewrite Heqresy. symmetry. simpl.
-    etransitivity. symmetry. apply Hs1. symmetry.
-    etransitivity. symmetry. apply Hs1. symmetry.
+    etransitivity. apply Hs1. symmetry.
+    etransitivity. apply Hs1. symmetry.
     apply apply_inf_subst_eq.
     etransitivity. destruct (H4 x') as [ p H ]. eapply eq_sys_image_find; eauto.
     assert (eq_sys_lookup ((x', LinkESNode y') :: s1) x' = Some (LinkESNode y')).
@@ -2504,7 +2789,7 @@ Proof.
     etransitivity. symmetry. apply inf_subst_compose_prop. symmetry.
     etransitivity. apply apply_inf_subst_eq. apply eq_sys_inf_subst_prop.
     etransitivity. symmetry. apply inf_subst_compose_prop.
-    apply apply_inf_subst_ext. intros n _. clear t. symmetry. apply Hs1.
+    apply apply_inf_subst_ext. intros n _. clear t. apply Hs1.
 Qed.
 
 Lemma eq_sys_union_grows_none x y s1 s2 s3 (H1 : eq_sys_wf s1)
