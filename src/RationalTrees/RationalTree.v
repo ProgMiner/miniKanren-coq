@@ -225,21 +225,30 @@ Lemma ConInf_is_ground_inf_term {n l r} (lH : is_ground_inf_term l) (rH : is_gro
                               : is_ground_inf_term (ConInf n l r).
 Proof. intros x p. good_inversion p; [ eapply lH | eapply rH ]; eauto. Qed.
 
-Inductive is_inf_subterm : inf_term -> inf_term -> Prop :=
-| EqInfSubterm t1 t2 : inf_term_eq t1 t2 -> is_inf_subterm t1 t2
-| ConInfSubtermL n t1 l2 r2 : is_inf_subterm t1 l2 -> is_inf_subterm t1 (ConInf n l2 r2)
-| ConInfSubtermR n t1 l2 r2 : is_inf_subterm t1 r2 -> is_inf_subterm t1 (ConInf n l2 r2)
+Inductive inf_term_path : inf_term -> inf_term -> Set :=
+| EqInfTermPath t1 t2 : inf_term_eq t1 t2 -> inf_term_path t1 t2
+| ConInfTermPathL n t1 l2 r2 : inf_term_path t1 l2 -> inf_term_path t1 (ConInf n l2 r2)
+| ConInfTermPathR n t1 l2 r2 : inf_term_path t1 r2 -> inf_term_path t1 (ConInf n l2 r2)
+.
+
+Fixpoint inf_term_path_ext l1 l2 r1 r2 (H1 : inf_term_eq l1 r1) (H2 : inf_term_eq l2 r2)
+                           (H3 : inf_term_path l1 l2) : inf_term_path r1 r2.
+Proof.
+  destruct H3.
+  * constructor. etransitivity; eauto. etransitivity; eauto. symmetry. auto.
+  * destruct r2. 1, 2: exfalso; inversion H2. apply ConInfTermPathL.
+    eapply inf_term_path_ext; eauto. inversion H2. auto.
+  * destruct r2. 1, 2: exfalso; inversion H2. apply ConInfTermPathR.
+    eapply inf_term_path_ext; eauto. inversion H2. auto.
+Defined.
+
+Variant is_inf_subterm t1 t2 : Prop :=
+| IsInfSubterm : inf_term_path t1 t2 -> is_inf_subterm t1 t2
 .
 
 Lemma is_inf_subterm_ext l1 l2 r1 r2 (H1 : inf_term_eq l1 r1) (H2 : inf_term_eq l2 r2)
-                         (H3 : is_inf_subterm l1 l2)
-                       : is_inf_subterm r1 r2.
-Proof.
-  generalize dependent r2. induction H3; intros.
-  * constructor. etransitivity. symmetry. eauto. etransitivity. eauto. eauto.
-  * good_inversion H2. apply ConInfSubtermL. apply IHis_inf_subterm; auto.
-  * good_inversion H2. apply ConInfSubtermR. apply IHis_inf_subterm; auto.
-Qed.
+                         (H3 : is_inf_subterm l1 l2) : is_inf_subterm r1 r2.
+Proof. destruct H3. constructor. eapply inf_term_path_ext; eauto. Qed.
 
 Fixpoint term_to_inf_term (t : term) : inf_term :=
 match t with
@@ -292,16 +301,17 @@ Definition is_rt (t : inf_term) : Prop :=
                             /\ forall t', is_inf_subterm t' t -> List.Exists (inf_term_eq t') ts.
 
 Lemma CstInf_is_rt n : is_rt (CstInf n).
-Proof. exists [CstInf n]. repeat constructor. good_inversion H. auto. Qed.
+Proof. exists [CstInf n]. repeat constructor. destruct H. good_inversion H. auto. Qed.
 
 Lemma ConInf_is_rt {n l r} (lH : is_rt l) (rH : is_rt r) : is_rt (ConInf n l r).
 Proof.
   destruct lH as [ lst [ lH1 lH2 ] ]. destruct rH as [ rst [ rH1 rH2 ] ].
-  exists (ConInf n l r :: lst ++ rst). constructor. constructor. constructor. reflexivity.
-  apply Forall_app. constructor; eapply Forall_impl; eauto; simpl; intros.
-  apply ConInfSubtermL. auto. apply ConInfSubtermR. auto.
-  intros. good_inversion H. left. auto. all: right; apply Exists_app.
-  left. apply lH2. auto. right. apply rH2. auto.
+  exists (ConInf n l r :: lst ++ rst). constructor.
+  constructor. constructor. constructor. reflexivity.
+  apply Forall_app. constructor; eapply Forall_impl; eauto; simpl; intros; destruct H; constructor.
+  apply ConInfTermPathL. auto. apply ConInfTermPathR. auto.
+  intros. destruct H. good_inversion H. left. auto. all: right; apply Exists_app.
+  left. apply lH2. constructor. auto. right. apply rH2. constructor. auto.
 Qed.
 
 Inductive is_subterm : term -> term -> Prop :=
@@ -314,15 +324,15 @@ Lemma is_subterm_inf t1 t2 : is_subterm t1 t2
                          <-> is_inf_subterm (term_to_inf_term t1) (term_to_inf_term t2).
 Proof.
   constructor; intro.
-  * induction H.
+  * induction H; try destruct IHis_subterm; constructor.
     - constructor. reflexivity.
-    - apply ConInfSubtermL. auto.
-    - apply ConInfSubtermR. auto.
+    - apply ConInfTermPathL. auto.
+    - apply ConInfTermPathR. auto.
   * remember (term_to_inf_term t1) as t1'. symmetry in Heqt1'.
     remember (term_to_inf_term t2) as t2'. symmetry in Heqt2'.
     generalize dependent t2. generalize dependent t1.
-    induction H; intros; subst.
-    - apply term_to_inf_term_eq in H. subst. constructor.
+    destruct H; induction H; intros; subst.
+    - apply term_to_inf_term_eq in i. subst. constructor.
     - destruct t2; good_inversion Heqt2'. apply ConSubtermL. auto.
     - destruct t2; good_inversion Heqt2'. apply ConSubtermR. auto.
 Qed.
@@ -332,11 +342,11 @@ Lemma is_subterm_inf_inv t1 t2 (H : is_inf_subterm t1 (term_to_inf_term t2))
                                   /\ is_subterm t1' t2.
 Proof.
   remember (term_to_inf_term t2) as t2'. symmetry in Heqt2'.
-  generalize dependent t2. induction H; intros; subst.
+  generalize dependent t2. destruct H. induction H; intros; subst.
   * eexists. constructor; eauto. constructor.
-  * destruct t2; good_inversion Heqt2'. edestruct IHis_inf_subterm as [ t1' [ H1 H2 ] ]. auto.
+  * destruct t2; good_inversion Heqt2'. edestruct IHinf_term_path as [ t1' [ H1 H2 ] ]. auto.
     eexists. constructor; eauto. apply ConSubtermL. auto.
-  * destruct t2; good_inversion Heqt2'. edestruct IHis_inf_subterm as [ t1' [ H1 H2 ] ]. auto.
+  * destruct t2; good_inversion Heqt2'. edestruct IHinf_term_path as [ t1' [ H1 H2 ] ]. auto.
     eexists. constructor; eauto. apply ConSubtermR. auto.
 Qed.
 
