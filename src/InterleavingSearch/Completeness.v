@@ -1,6 +1,6 @@
-Require Import List.
-Require Import Coq.Lists.ListSet.
-Require Import Lia.
+From Stdlib Require Import List.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Import Lia.
 
 Require Import Unification.
 Require Import Streams.

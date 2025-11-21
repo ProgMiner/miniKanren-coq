@@ -1,9 +1,9 @@
-Require Import List.
+From Stdlib Require Import List.
 Import ListNotations.
-Require Import Arith.
-Require Import Lia.
-Require Import Coq.Lists.ListSet.
-Require Export Coq.Structures.OrderedTypeEx.
+From Stdlib Require Import Arith.
+From Stdlib Require Import Lia.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Export Structures.OrderedTypeEx.
 
 Ltac good_inversion H := inversion H; clear H; subst.
 
@@ -436,7 +436,7 @@ Proof.
   intros. destruct UNIQ_VAR as [n [IN NOT_IN]].
   apply in_split in IN.
   destruct IN as [l1 [l2 EQ]]. subst.
-  unfold var_set_size. rewrite app_length. simpl.
+  unfold var_set_size. rewrite length_app. simpl.
   assert (LE_LEN : length vs1 <= length (l1 ++ l2)).
   { apply NoDup_incl_length.
     { assumption. }
@@ -446,7 +446,7 @@ Proof.
       { inversion H.
         { exfalso. subst. auto. }
         { apply in_or_app. right. auto. } } } }
-  rewrite app_length in LE_LEN. lia.
+  rewrite length_app in LE_LEN. lia.
 Qed.
 
 Lemma unification_step_decreases_fv

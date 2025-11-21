@@ -1,9 +1,9 @@
-Require Import List.
+From Stdlib Require Import List.
 Import ListNotations.
-Require Import Coq.Lists.ListSet.
-Require Import Coq.Program.Equality.
-Require Import Lia.
-Require Import Extraction.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Import Program.Equality.
+From Stdlib Require Import Lia.
+From Stdlib Require Import Extraction.
 
 Require Import Unification.
 Require Import Streams.
@@ -528,4 +528,5 @@ Qed.
 
 Extraction Language Haskell.
 
-Extraction "extracted/interleaving_interpreter.hs" op_sem_exists.
+Set Extraction Output Directory "./extracted".
+Extraction "interleaving_interpreter.hs" op_sem_exists.

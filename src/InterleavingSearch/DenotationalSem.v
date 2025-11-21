@@ -1,10 +1,10 @@
-Require Import List.
-Require Import Coq.Lists.ListSet.
+From Stdlib Require Import List.
 Import ListNotations.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Import Lia.
 
 Require Import Unification.
 Require Import Language.
-Require Import Lia.
 
 Lemma set_empty_union
       (s1 s2 : var_set)

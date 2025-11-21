@@ -108,16 +108,17 @@ eq_dec :: Nat -> Nat -> Sumbool
 eq_dec n =
   nat_rec (\m -> case m of {
                   O -> Left;
-                  S _ -> Right}) (\_ iHn m ->
-    case m of {
-     O -> Right;
-     S n0 -> iHn n0}) n
+                  S _ -> Right})
+    (\_ iHn m -> case m of {
+                  O -> Right;
+                  S n0 -> iHn n0})
+    n
 
 map :: (a1 -> a2) -> (List a1) -> List a2
 map f l =
   case l of {
    Nil -> Nil;
-   Cons a t -> Cons (f a) (map f t)}
+   Cons a l0 -> Cons (f a) (map f l0)}
 
 type Name = Nat
 
@@ -227,7 +228,9 @@ mgu_result_exists t1 t2 =
                  case x1 of {
                   Some s -> ExistT (Some (compose (singleton_subst n t3) s))
                    __;
-                  None -> ExistT None __}}}}) __ x0) (Pair t1 t2)}
+                  None -> ExistT None __}}}})
+           __ x0)
+         (Pair t1 t2)}
   in
   eq_rec_r __ (\h0 -> h0) __ h
 
@@ -251,7 +254,7 @@ type Spec = Name -> Def
 
 prog :: Spec
 prog =
-  Prelude.error "AXIOM TO BE REALIZED"
+  Prelude.error "AXIOM TO BE REALIZED (semantics.Syntax.Language.Prog)"
 
 data Nt_state =
    Leaf Goal Subst Nat
@@ -299,7 +302,8 @@ eval_step_exists nst =
      Conj g0 g1 -> ExistT Step (ExistT (NTState (Prod0 (Leaf g0 s n) g1)) __);
      Fresh g0 -> ExistT Step (ExistT (NTState (Leaf (g0 n) s (S n))) __);
      Invoke n0 t -> ExistT Step (ExistT (NTState (Leaf
-      (proj1_sig (prog n0) t) s n)) __)}) (\_ iHnst1 nst2 _ ->
+      (proj1_sig (prog n0) t) s n)) __)})
+    (\_ iHnst1 nst2 _ ->
     case iHnst1 of {
      ExistT x s ->
       case s of {
@@ -321,7 +325,8 @@ eval_step_exists nst =
           case x of {
            Step -> ExistT Step (ExistT (NTState (Prod0 n g)) __);
            Answer s0 n0 -> ExistT Step (ExistT (NTState (Sum (Leaf g s0 n0)
-            (Prod0 n g))) __)}}}}) nst
+            (Prod0 n g))) __)}}}})
+    nst
 
 type Trace = Stream Label
 
