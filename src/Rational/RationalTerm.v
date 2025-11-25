@@ -13,7 +13,7 @@ match t with
 | InfCon f l r => InfCon f l r
 end.
 
-Lemma inf_term_step_prop : forall t, t = inf_term_step t.
+Lemma inf_term_step_prop t : t = inf_term_step t.
 Proof. intros. destruct t; reflexivity. Qed.
 
 Inductive path : Set :=
@@ -23,13 +23,13 @@ Inductive path : Set :=
 .
 
 Inductive inf_path_to : inf_term -> path -> inf_term -> Prop :=
-| InfHere : forall t, inf_path_to t Here t
-| InfLeft : forall f l r p t, inf_path_to l p t -> inf_path_to (InfCon f l r) (Left p) t
-| InfRight : forall f l r p t, inf_path_to r p t -> inf_path_to (InfCon f l r) (Right p) t
+| InfHere t : inf_path_to t Here t
+| InfLeft f l r p t : inf_path_to l p t -> inf_path_to (InfCon f l r) (Left p) t
+| InfRight f l r p t : inf_path_to r p t -> inf_path_to (InfCon f l r) (Right p) t
 .
 
-Lemma inf_path_to_inj : forall t p t1 t2, inf_path_to t p t1 -> inf_path_to t p t2 -> t1 = t2.
-Proof. intros t p t1 t2 H. induction H; intro H'; inversion H'; subst; auto. Qed.
+Lemma inf_path_to_inj t p t1 t2 (H : inf_path_to t p t1) : inf_path_to t p t2 -> t1 = t2.
+Proof. induction H; intro H'; inversion H'; subst; auto. Qed.
 
 Definition inf_term_eq_node (l r : inf_term) : Prop :=
 match l, r with
@@ -56,6 +56,15 @@ Instance inf_term_eq_node_equiv : RelationClasses.Equivalence inf_term_eq_node :
 
 Definition inf_term_eq (l r : inf_term) : Prop :=
   forall p l', inf_path_to l p l' -> exists r', inf_path_to r p r' /\ inf_term_eq_node l' r'.
+
+Lemma inf_term_eq_con n l1 l2 r1 r2 (H1 : inf_term_eq l1 l2) (H2 : inf_term_eq r1 r2)
+                    : inf_term_eq (InfCon n l1 r1) (InfCon n l2 r2).
+Proof.
+  intros p l' Hp. good_inversion Hp.
+  * eexists. constructor. constructor. reflexivity.
+  * apply H1 in H6. destruct H6 as [ r' [ H1_1 H1_2 ] ]. exists r'. constructor; auto. constructor. auto.
+  * apply H2 in H6. destruct H6 as [ r' [ H2_1 H2_2 ] ]. exists r'. constructor; auto. constructor. auto.
+Qed.
 
 Instance inf_term_eq_refl : RelationClasses.Reflexive inf_term_eq.
 Proof.
@@ -127,3 +136,8 @@ Qed.
 
 Instance inf_term_eq_equiv : RelationClasses.Equivalence inf_term_eq :=
   RelationClasses.Build_Equivalence _ _ _ _.
+
+Definition inf_subterm (l r : inf_term) := exists p, inf_path_to l p r.
+
+Definition is_rational_term (t : inf_term) :=
+  exists ts, forall l, inf_subterm t l -> exists r, inf_term_eq l r /\ List.In r ts.
