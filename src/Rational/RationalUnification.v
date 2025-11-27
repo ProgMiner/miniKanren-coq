@@ -70,26 +70,6 @@ Proof.
   * simpl. destruct (name_eq_dec y z); auto.
 Qed.
 
-Fixpoint term_subterms (t : term) : list term :=
-match t with
-| Var _ => [t]
-| Cst _ => [t]
-| Con f l r => t :: term_subterms l ++ term_subterms r
-end.
-
-Lemma term_subterms_self t : In t (term_subterms t).
-Proof. induction t; left; auto. Qed.
-
-Lemma term_subterms_incl t1 t2 (H : In t1 (term_subterms t2)) : incl (term_subterms t1) (term_subterms t2).
-Proof.
-  induction t2; simpl in H.
-  * destruct H. subst. apply incl_refl. inversion H.
-  * destruct H. subst. apply incl_refl. inversion H.
-  * destruct H. subst. apply incl_refl. apply in_app_or in H. simpl. apply incl_tl. destruct H.
-    - apply incl_appl. auto.
-    - apply incl_appr. auto.
-Qed.
-
 Definition in_eqsys_rhs (s : eqsys) (t : term) := exists x, eqsys_lookup s x = Some t.
 
 Fixpoint eqsys_rhs (s : eqsys) : list term :=
@@ -353,37 +333,98 @@ Proof. etransitivity. apply wf_eqsys_image_hlp_step. apply wf_eqsys_image_hlp_ap
 Definition wf_eqsys_inf_subterms (s : wf_eqsys) : list inf_term :=
   map (wf_eqsys_apply s) (eqsys_subterms (wf_eqsys_get s)).
 
-Theorem wf_eqsys_image_rational s x : is_rational_term (wf_eqsys_image s x).
+Definition wf_eqsys_to_subst (s : wf_eqsys) : inf_subst :=
+  map (fun x => (x, wf_eqsys_image s x)) (eqsys_dom (wf_eqsys_get s)).
+
+Lemma wf_eqsys_to_subst_dom s x : in_eqsys_dom (wf_eqsys_get s) x
+                              <-> In x (inf_subst_dom (wf_eqsys_to_subst s)).
 Proof.
-  exists (InfVar (fst (wf_eqsys_walk s x)) :: wf_eqsys_inf_subterms s). intros.
-  apply wf_eqsys_image_hlp_subterm in H. simpl in H.
-  destruct H as [ r [ H1 H2 ] ]. destruct H2.
-  * destruct H. 2: inversion H. subst. exists (wf_eqsys_apply s (snd (wf_eqsys_walk s x))).
-    constructor. etransitivity. eauto. apply wf_eqsys_apply_var. destruct (wf_eqsys_walk_rhs s x).
-    - right. apply in_map. eapply in_incl_trans. eauto. intros t Ht. apply eqsys_rhs_subterms.
-      exists t. constructor. auto. apply term_subterms_self.
-    - left. destruct H as [ y H ]. rewrite H. simpl. rewrite inf_term_step_prop. simpl.
-      set (H' := H). rewrite wf_eqsys_walk_idemp in H'. rewrite H in H'. simpl in H'.
-      rewrite H'. auto.
-  * exists (wf_eqsys_apply s r). constructor.
-    - etransitivity. eauto. apply wf_eqsys_image_hlp_apply.
-    - right. apply in_map. auto.
+  etransitivity. symmetry. apply eqsys_dom_spec. unfold wf_eqsys_to_subst.
+  remember (eqsys_dom (wf_eqsys_get s)) as xs. clear Heqxs. induction xs as [ | y xs IH ].
+  reflexivity. simpl. symmetry. etransitivity. apply ListSet.set_add_iff.
+  constructor; intro.
+  * destruct H. auto. apply IH in H. auto.
+  * destruct H. auto. apply IH in H. auto.
+Qed.
+
+Lemma wf_eqsys_to_subst_image_some s x t (H : inf_image (wf_eqsys_to_subst s) x = Some t)
+                                  : t = wf_eqsys_image s x.
+Proof.
+  unfold wf_eqsys_to_subst in H. remember (eqsys_dom (wf_eqsys_get s)) as xs.
+  clear Heqxs. induction xs as [ | y xs IH ]. inversion H. simpl in H.
+  destruct (name_eq_dec x y).
+  * good_inversion H. auto.
+  * apply IH. auto.
+Qed.
+
+Lemma wf_eqsys_to_subst_apply s t
+  : inf_term_eq (wf_eqsys_apply s t) (inf_subst_apply (wf_eqsys_to_subst s) (term_to_inf t)).
+Proof.
+  induction t; rewrite inf_term_step_prop; simpl.
+  * remember (inf_image (wf_eqsys_to_subst s) n) as t.
+    symmetry in Heqt. destruct t as [ t | ].
+    - refine (_ : inf_term_eq _ (inf_term_step t)). rewrite <- inf_term_step_prop.
+      apply wf_eqsys_to_subst_image_some in Heqt. subst. reflexivity.
+    - assert (~In n (inf_subst_dom (wf_eqsys_to_subst s))). {
+        intro. apply inf_image_dom in H. destruct H. rewrite H in Heqt. inversion Heqt.
+      }
+      clear Heqt.
+      assert (eqsys_lookup (wf_eqsys_get s) n = None). {
+        remember (eqsys_lookup (wf_eqsys_get s) n) as res. destruct res; auto.
+        exfalso. apply H. apply wf_eqsys_to_subst_dom. eexists. eauto.
+      }
+      clear H.
+      assert (wf_eqsys_walk s n = (n, Var n)). {
+        eapply eqsys_walk_result_inj. apply wf_eqsys_walk_prop. constructor. auto.
+      }
+      clear H0.
+      rewrite inf_term_step_prop at 1. simpl. rewrite H. reflexivity.
+  * rewrite inf_term_step_prop. simpl. reflexivity.
+  * apply inf_term_eq_con; auto.
+Qed.
+
+Theorem wf_eqsys_to_subst_rational (s : wf_eqsys) : is_rational_subst (wf_eqsys_to_subst s).
+Proof.
+  exists (fun x => InfVar (fst (wf_eqsys_walk s x)) :: wf_eqsys_inf_subterms s). intros.
+  apply wf_eqsys_to_subst_image_some in H. subst.
+  apply wf_eqsys_image_hlp_subterm in H0. simpl in H0.
+  destruct H0 as [ r [ H1 H2 ] ]. destruct H2.
+  * destruct H. 2: inversion H. subst. destruct (wf_eqsys_walk_rhs s x).
+    - apply Exists_cons_tl. apply Exists_map. apply Exists_flat_map. apply Exists_exists.
+      exists (snd (wf_eqsys_walk s x)). constructor. auto. apply Exists_exists.
+      exists (snd (wf_eqsys_walk s x)). constructor. apply term_subterms_self.
+      etransitivity. eauto. apply wf_eqsys_apply_var.
+    - destruct H as [ y H ]. rewrite H. simpl. apply Exists_cons_hd. etransitivity. eauto.
+      rewrite inf_term_step_prop at 1. simpl. rewrite H. reflexivity.
+  * apply Exists_cons_tl. apply Exists_map. apply Exists_exists. eexists. constructor. eauto.
+    etransitivity. eauto. apply wf_eqsys_image_hlp_apply.
+Qed.
+
+Corollary wf_eqsys_to_subst_image_rational s x t (H : inf_image (wf_eqsys_to_subst s) x = Some t)
+                                         : is_rational_term t.
+Proof. eapply inf_image_rational; eauto. apply wf_eqsys_to_subst_rational. Qed.
+
+Corollary wf_eqsys_to_subst_apply_rational s t (H : is_rational_term t)
+                                         : is_rational_term (inf_subst_apply (wf_eqsys_to_subst s) t).
+Proof. apply inf_subst_apply_rational; auto. apply wf_eqsys_to_subst_rational. Qed.
+
+Corollary wf_eqsys_image_rational s x : is_rational_term (wf_eqsys_image s x).
+Proof.
+  remember (eqsys_lookup (wf_eqsys_get s) x) as res. destruct res.
+  * assert (in_eqsys_dom (wf_eqsys_get s) x). exists t. auto. clear t Heqres.
+    apply wf_eqsys_to_subst_dom in H. apply inf_image_dom in H. destruct H as [ t H ].
+    set (H' := H). apply inf_image_rational in H'. apply wf_eqsys_to_subst_image_some in H.
+    subst. auto. apply wf_eqsys_to_subst_rational.
+  * assert (eqsys_walk_result (wf_eqsys_get s) x (x, Var x)). constructor. auto. clear Heqres.
+    apply (eqsys_walk_result_inj _ _ (wf_eqsys_walk s x)) in H.
+    - rewrite inf_term_step_prop. simpl. rewrite H. exists [InfVar x]. intros.
+      destruct H0. good_inversion H0. apply Exists_cons_hd. reflexivity.
+    - apply wf_eqsys_walk_prop.
 Qed.
 
 Corollary wf_eqsys_apply_rational s t : is_rational_term (wf_eqsys_apply s t).
 Proof.
-  induction t.
-  * apply wf_eqsys_image_rational.
-  * exists [InfCst n]. intros. destruct H as [ p H ]. good_inversion H.
-    exists (InfCst n). constructor. reflexivity. left. auto.
-  * destruct IHt1 as [ ts1 IH1 ]. destruct IHt2 as [ ts2 IH2 ].
-    exists (InfCon n (wf_eqsys_apply s t1) (wf_eqsys_apply s t2) :: ts1 ++ ts2). intros.
-    destruct H as [ p H ]. good_inversion H.
-    - eexists. constructor. reflexivity. left. auto.
-    - assert (exists p, inf_path_to (wf_eqsys_apply s t1) p l). exists p0. auto.
-      apply IH1 in H. destruct H as [ r [ H1 H2 ] ]. exists r. constructor; auto.
-      right. apply in_or_app. left. auto.
-    - assert (exists p, inf_path_to (wf_eqsys_apply s t2) p l). exists p0. auto.
-      apply IH2 in H. destruct H as [ r [ H1 H2 ] ]. exists r. constructor; auto.
-      right. apply in_or_app. right. auto.
+  eapply is_rational_eq. symmetry. apply wf_eqsys_to_subst_apply.
+  apply inf_subst_apply_rational. apply wf_eqsys_to_subst_rational.
+  apply term_to_inf_rational.
 Qed.
