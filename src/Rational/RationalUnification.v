@@ -520,43 +520,11 @@ Proof.
   * apply inf_term_eq_con; auto.
 Qed.
 
-Lemma wf_eqsys_to_subst_eq_node s1 s2 t (H : wf_eqsys_eq s1 s2)
-                         : inf_term_eq_node (inf_subst_apply (wf_eqsys_to_subst s1) t)
-                                            (inf_subst_apply (wf_eqsys_to_subst s2) t).
-Proof.
-  rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop.
-  destruct t; simpl; auto. repeat rewrite wf_eqsys_to_subst_image.
-  fold (inf_term_step (wf_eqsys_image s1 n)). fold (inf_term_step (wf_eqsys_image s2 n)).
-  repeat rewrite <- inf_term_step_prop. eapply wf_eqsys_image_eq in H.
-  edestruct (H Here) as [ t [ H1 H2 ] ]. constructor. good_inversion H1. eauto.
-Qed.
-
 Lemma wf_eqsys_to_subst_eq s1 s2 (H : wf_eqsys_eq s1 s2)
                          : inf_subst_eq (wf_eqsys_to_subst s1) (wf_eqsys_to_subst s2).
 Proof.
-  intros t p l' Hp. remember (inf_subst_apply (wf_eqsys_to_subst s1) t) as t'.
-  revert t Heqt'. induction Hp; intros.
-  * subst. eexists. constructor. constructor. apply wf_eqsys_to_subst_eq_node. auto.
-  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
-    - specialize (wf_eqsys_image_eq _ _ n H). intro.
-      edestruct (H0 Here). constructor. destruct H2. good_inversion H2.
-      rewrite wf_eqsys_to_subst_image in H1. remember (wf_eqsys_image s2 n) as res.
-      destruct (wf_eqsys_image s1 n); destruct res; good_inversion H3; good_inversion H1.
-      apply inf_term_eq_conl in H0. edestruct (H0 p) as [ r' [ H1 H2 ] ]. eauto.
-      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-      rewrite wf_eqsys_to_subst_image. rewrite <- Heqres. constructor. auto.
-    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
-      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
-  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
-    - specialize (wf_eqsys_image_eq _ _ n H). intro.
-      edestruct (H0 Here). constructor. destruct H2. good_inversion H2.
-      rewrite wf_eqsys_to_subst_image in H1. remember (wf_eqsys_image s2 n) as res.
-      destruct (wf_eqsys_image s1 n); destruct res; good_inversion H3; good_inversion H1.
-      apply inf_term_eq_conr in H0. edestruct (H0 p) as [ r' [ H1 H2 ] ]. eauto.
-      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-      rewrite wf_eqsys_to_subst_image. rewrite <- Heqres. constructor. auto.
-    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
-      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
+  apply inf_subst_eq_ext. intro. repeat rewrite wf_eqsys_to_subst_image.
+  apply wf_eqsys_image_eq. auto.
 Qed.
 
 Theorem wf_eqsys_to_subst_rational (s : wf_eqsys) : is_rational_subst (wf_eqsys_to_subst s).
@@ -770,8 +738,13 @@ Proof.
     remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' xt ].
     remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' yt ].
     destruct (name_eq_dec x' y'). good_inversion Heqres. simpl.
-    - admit.
-    - admit.
+    - eapply inf_min_unifying_extension_eq. reflexivity. reflexivity. reflexivity.
+      apply wf_eqsys_to_subst_eq. eauto. apply inf_min_unifying_extension_same.
+      specialize (wf_eqsys_walk_fst_inj _ _ _ _ _ _ Heqres1 Heqres2). intro. subst.
+      unfold inf_unifier. rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop.
+      simpl. repeat rewrite wf_eqsys_to_subst_image. unfold wf_eqsys_image. simpl.
+      rewrite Heqres1. rewrite Heqres2. reflexivity.
+    - destruct xt; destruct yt; good_inversion Heqres; simpl; admit.
   * apply wf_eqsys_union_none in Heqres. unfold eqsys_union in Heqres.
     remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' xt ].
     remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' yt ].
