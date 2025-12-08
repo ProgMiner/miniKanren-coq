@@ -271,8 +271,21 @@ Definition subst_to_inf (s : subst) : inf_subst := map (fun x => (fst x, term_to
 Fixpoint inf_subst_dom (s : inf_subst) : var_set :=
 match s with
 | [] => var_set_empty
-| (x, _) :: s => var_set_add x (inf_subst_dom s)
+| (x, t) :: s =>
+  match t with
+  | InfVar y =>
+    if name_eq_dec x y
+    then var_set_remove x (inf_subst_dom s)
+    else var_set_add x (inf_subst_dom s)
+  | _ => var_set_add x (inf_subst_dom s)
+  end
 end.
+
+Lemma inf_subst_dom_nodup s : NoDup (inf_subst_dom s).
+Proof.
+  induction s as [ | [ x t ] s ]. constructor. simpl. destruct t. destruct (name_eq_dec x n).
+  apply ListSet.set_remove_nodup. auto. all: apply ListSet.set_add_nodup; auto.
+Qed.
 
 Fixpoint inf_image (s : inf_subst) (x : name) : inf_term :=
 match s with
@@ -294,11 +307,26 @@ Proof.
   destruct (name_eq_dec x y); destruct (PeanoNat.Nat.eq_dec y x); auto; subst; contradiction.
 Qed.
 
-Lemma inf_image_dom s x (H : ~In x (inf_subst_dom s)) : inf_image s x = InfVar x.
+Lemma inf_image_dom s x : ~In x (inf_subst_dom s) <-> inf_image s x = InfVar x.
 Proof.
-  induction s as [ | [ y t ] s ]. auto. simpl. destruct (name_eq_dec x y).
-  * exfalso. apply H. apply ListSet.set_add_intro2. auto.
-  * apply IHs. intro. apply H. apply ListSet.set_add_intro1. auto.
+  constructor; intro.
+  * induction s as [ | [ y t ] s ]. auto. simpl. destruct (name_eq_dec x y).
+    - simpl in H. destruct t. destruct (name_eq_dec y n). subst. auto.
+      all: exfalso; apply H; apply ListSet.set_add_intro2; auto.
+    - apply IHs. intro. apply H. simpl. destruct t. destruct (name_eq_dec y n0).
+      apply ListSet.set_remove_3; auto. all: apply ListSet.set_add_intro1; auto.
+  * induction s as [ | [ y t ] s ]. auto. simpl in H. destruct (name_eq_dec x y).
+    - subst. intro. simpl in H. destruct (name_eq_dec y y); try contradiction.
+      apply ListSet.set_remove_2 in H; auto. apply inf_subst_dom_nodup.
+    - simpl. destruct t. destruct (name_eq_dec y n0). all: intro; apply IHs; auto.
+      eapply ListSet.set_remove_1. eauto. all: eapply ListSet.set_add_elim2; eauto.
+Qed.
+
+Lemma inf_image_dom_inv s x : In x (inf_subst_dom s) <-> inf_image s x <> InfVar x.
+Proof.
+  constructor; intro. intro. eapply inf_image_dom. eauto. eauto.
+  destruct (in_dec name_eq_dec x (inf_subst_dom s)); auto.
+  apply inf_image_dom in n. rewrite n in H. contradiction.
 Qed.
 
 Definition is_rational_subst (s : inf_subst) :=
@@ -409,8 +437,49 @@ Proof.
       rewrite inf_term_step_prop at 1. simpl. rewrite n. reflexivity.
 Qed.
 
+Lemma inf_subst_apply_ext s1 s2 t (H : forall x, inf_subterm t (InfVar x)
+                                              -> inf_term_eq (inf_image s1 x) (inf_image s2 x))
+                        : inf_term_eq (inf_subst_apply s1 t) (inf_subst_apply s2 t).
+Proof.
+  intros p l' Hp. remember (inf_subst_apply s1 t) as t'. revert t H Heqt'. induction Hp; intros.
+  * subst. eexists. constructor. constructor.
+    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop.
+    destruct t0; simpl; auto.
+    fold (inf_term_step (inf_image s1 n)). fold (inf_term_step (inf_image s2 n)).
+    repeat rewrite <- inf_term_step_prop.
+    assert (inf_term_eq (inf_image s1 n) (inf_image s2 n)). apply H. reflexivity.
+    edestruct (H0 Here) as [ r' [ H1 H2 ] ]. constructor. good_inversion H1. auto.
+  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
+    - fold (inf_term_step (inf_image s1 n)) in H1. rewrite <- inf_term_step_prop in H1.
+      assert (inf_term_eq (inf_image s1 n) (inf_image s2 n)). apply H. reflexivity.
+      rewrite <- H1 in H0. edestruct (H0 (Left p)) as [ r' [ H2 H3 ] ].
+      constructor. eauto. exists r'. constructor; auto.
+      rewrite inf_term_step_prop at 1. simpl.
+      fold (inf_term_step (inf_image s2 n)). rewrite <- inf_term_step_prop. auto.
+    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. 2: auto.
+      intros. apply H. destruct H0 as [ q H0 ]. exists (Left q). constructor. auto.
+      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. constructor. auto.
+  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
+    - fold (inf_term_step (inf_image s1 n)) in H1. rewrite <- inf_term_step_prop in H1.
+      assert (inf_term_eq (inf_image s1 n) (inf_image s2 n)). apply H. reflexivity.
+      rewrite <- H1 in H0. edestruct (H0 (Right p)) as [ r' [ H2 H3 ] ].
+      constructor. eauto. exists r'. constructor; auto.
+      rewrite inf_term_step_prop at 1. simpl.
+      fold (inf_term_step (inf_image s2 n)). rewrite <- inf_term_step_prop. auto.
+    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. 2: auto.
+      intros. apply H. destruct H0 as [ q H0 ]. exists (Right q). constructor. auto.
+      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. constructor. auto.
+Qed.
+
 Definition inf_subst_eq (s1 s2 : inf_subst) : Prop :=
   forall t, inf_term_eq (inf_subst_apply s1 t) (inf_subst_apply s2 t).
+
+Fact inf_image_eq s1 s2 x (H : inf_subst_eq s1 s2) : inf_term_eq (inf_image s1 x) (inf_image s2 x).
+Proof.
+  transitivity (inf_subst_apply s1 (InfVar x)).
+  2: transitivity (inf_subst_apply s2 (InfVar x)); auto.
+  all: rewrite inf_term_step_prop at 1; rewrite inf_term_step_prop; simpl; reflexivity.
+Qed.
 
 Instance inf_subst_eq_refl : RelationClasses.Reflexive inf_subst_eq.
 Proof. intros s x. reflexivity. Qed.
@@ -426,33 +495,20 @@ Instance inf_subst_eq_equiv : RelationClasses.Equivalence inf_subst_eq :=
 
 Lemma inf_subst_eq_ext s1 s2 (H : forall x, inf_term_eq (inf_image s1 x) (inf_image s2 x))
                      : inf_subst_eq s1 s2.
+Proof. intros t. apply inf_subst_apply_ext. intros. clear t H0. auto. Qed.
+
+Lemma inf_subst_eq_dom_aux s1 s2 x (H1 : inf_subst_eq s1 s2) (H2 : In x (inf_subst_dom s1))
+                         : In x (inf_subst_dom s2).
 Proof.
-  intros t p l' Hp. remember (inf_subst_apply s1 t) as t'.
-  revert t Heqt'. induction Hp; intros.
-  * subst. eexists. constructor. constructor.
-    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. destruct t0; simpl; auto.
-    fold (inf_term_step (inf_image s1 n)). fold (inf_term_step (inf_image s2 n)).
-    repeat rewrite <- inf_term_step_prop. edestruct (H n Here). constructor. destruct H0.
-    good_inversion H0. auto.
-  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
-    - specialize (H n). edestruct (H Here). constructor. destruct H0. good_inversion H0.
-      remember (inf_image s2 n) as res.
-      destruct (inf_image s1 n); destruct res; good_inversion H2; good_inversion H1.
-      apply inf_term_eq_conl in H. edestruct (H p) as [ r' [ H1 H2 ] ]. eauto.
-      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-      rewrite <- Heqres. constructor. auto.
-    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
-      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
-  * rewrite inf_term_step_prop in Heqt'. destruct t0; good_inversion Heqt'.
-    - specialize (H n). edestruct (H Here). constructor. destruct H0. good_inversion H0.
-      remember (inf_image s2 n) as res.
-      destruct (inf_image s1 n); destruct res; good_inversion H2; good_inversion H1.
-      apply inf_term_eq_conr in H. edestruct (H p) as [ r' [ H1 H2 ] ]. eauto.
-      exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-      rewrite <- Heqres. constructor. auto.
-    - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
-      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
+  assert (inf_term_eq (inf_image s1 x) (inf_image s2 x)). apply inf_image_eq. auto.
+  apply inf_image_dom_inv. intro. rewrite H0 in H. clear H0.
+  edestruct (H Here). constructor. destruct H0. good_inversion H0.
+  eapply inf_image_dom; eauto. destruct (inf_image s1 x); good_inversion H3. auto.
 Qed.
+
+Lemma inf_subst_eq_dom s1 s2 x (H : inf_subst_eq s1 s2)
+                     : In x (inf_subst_dom s1) <-> In x (inf_subst_dom s2).
+Proof. constructor; intro; eapply inf_subst_eq_dom_aux; eauto. symmetry. auto. Qed.
 
 Definition inf_subst_compose (s1 s2 : inf_subst) : inf_subst :=
   map (fun p => (fst p, inf_subst_apply s1 (snd p))) s2 ++ s1.
@@ -471,21 +527,6 @@ Proof.
   * induction s1 as [ | [ y t' ] s1 ]; rewrite inf_term_step_prop; simpl. auto.
     destruct (name_eq_dec x y); apply inf_term_step_prop.
   * simpl. destruct (name_eq_dec x y); auto.
-Qed.
-
-Lemma inf_subst_compose_dom s1 s2 x : In x (inf_subst_dom (inf_subst_compose s1 s2))
-                                  <-> In x (inf_subst_dom s1) \/ In x (inf_subst_dom s2).
-Proof.
-  induction s2 as [ | [ y t ] s2 ]; simpl.
-  * constructor; intro. left. auto. destruct H. auto. inversion H.
-  * constructor; intro.
-    - apply ListSet.set_add_elim in H. destruct H.
-      + subst y. right. apply ListSet.set_add_intro2. auto.
-      + apply IHs2 in H. destruct H. auto. right. apply ListSet.set_add_intro1. auto.
-    - destruct H.
-      + apply ListSet.set_add_intro1. apply IHs2. auto.
-      + apply ListSet.set_add_elim in H. destruct H. apply ListSet.set_add_intro2. auto.
-        apply ListSet.set_add_intro1. apply IHs2. auto.
 Qed.
 
 Lemma inf_subst_compose_spec_eq_node s1 s2 t : inf_term_eq_node (inf_subst_apply s1 (inf_subst_apply s2 t))
@@ -543,6 +584,120 @@ Proof.
   etransitivity; apply inf_subst_compose_spec.
 Qed.
 
+Lemma inf_subst_recursive_unifier_aux s x t1 t2 t
+  (H1 : inf_term_eq t1 (inf_subst_apply (inf_subst_singleton x t1) t2))
+  (H2 : inf_term_eq (inf_image s x) (inf_subst_apply s t2)) (H3 : t2 <> InfVar x)
+: inf_term_eq (inf_subst_apply s t) (inf_subst_apply s (inf_subst_apply (inf_subst_singleton x t1) t)).
+Proof.
+  intros p l' Hp. remember (inf_subst_apply s t) as t'.
+  assert (inf_term_eq t' (inf_subst_apply s t)). rewrite Heqt'. reflexivity.
+  clear Heqt'. revert t H. induction Hp; intros.
+  * eexists. constructor. constructor. etransitivity.
+    edestruct (H Here). constructor. destruct H0. good_inversion H0. apply H4.
+    clear t H. symmetry. destruct t0; simpl; auto. destruct (name_eq_dec n x).
+    2: destruct (inf_image s n); auto.
+    subst n. edestruct (H1 Here). constructor. destruct H. good_inversion H.
+    edestruct (H2 Here). constructor. destruct H. good_inversion H.
+    rewrite inf_term_step_prop in H0. rewrite inf_term_step_prop in H4.
+    destruct t1; destruct t2; simpl in H0; try (inversion H0; fail); try subst n0.
+    all: try (destruct (name_eq_dec n0 x); try subst n0; contradiction).
+    2, 3: destruct (inf_image s x); inversion H4; auto.
+    destruct (name_eq_dec n0 x); subst n0. contradiction. simpl in H4.
+    destruct (inf_image s n); destruct (inf_image s x); good_inversion H4; auto.
+  * edestruct (H Here). constructor. destruct H0. good_inversion H0.
+    destruct t0; try good_inversion H4.
+    - simpl in H4. rename n into y. remember (inf_image s y) as t'.
+      symmetry in Heqt'. destruct t'; good_inversion H4.
+      rewrite inf_term_step_prop in H. simpl in H. rewrite Heqt' in H. apply inf_term_eq_conl in H.
+      remember (name_eq_dec y x) as cond. symmetry in Heqcond. destruct cond. 2: {
+        edestruct (H p) as [ r' ]. eauto. destruct H0. exists r'. constructor; auto.
+        rewrite inf_term_step_prop at 1. simpl. rewrite Heqcond. rewrite Heqt'. constructor. auto.
+      }
+      subst y. rewrite Heqt' in H2.
+      edestruct (H2 Here). constructor. destruct H0. good_inversion H0.
+      rewrite inf_term_step_prop in H4. destruct t2; try good_inversion H4.
+      + simpl in H4. rename n0 into y. remember (inf_image s y) as t2.
+        destruct t2; good_inversion H4. symmetry in Heqt2.
+        rewrite inf_term_step_prop in H1. rewrite inf_term_step_prop in H2.
+        simpl in H1. simpl in H2. rewrite Heqt2 in H2. apply inf_term_eq_conl in H2.
+        destruct (name_eq_dec y x). subst y. contradiction. clear n.
+        edestruct (H1 Here). constructor. destruct H0. good_inversion H0.
+        destruct t1; good_inversion H4. clear H1.
+        edestruct (H p) as [ r1 ]. eauto. destruct H0.
+        edestruct (H2 p) as [ r2 ]. eauto. destruct H4.
+        exists r2. constructor. rewrite inf_term_step_prop at 1. simpl.
+        rewrite Heqcond. rewrite Heqt2. constructor. auto.
+        etransitivity; eauto.
+      + rewrite inf_term_step_prop in H2. simpl in H2. apply inf_term_eq_conl in H2.
+        rewrite inf_term_step_prop in H1. simpl in H1. edestruct (H1 Here). constructor.
+        destruct H0. good_inversion H0. destruct t1; good_inversion H4. apply inf_term_eq_conl in H1.
+        edestruct IHHp as [ r1 [ IH1 IH2 ] ]. etransitivity. eauto. eauto.
+        eapply inf_subst_apply_eq in H1. symmetry in H1.
+        edestruct (H1 p) as [ r2 ]. eauto. destruct H0.
+        exists r2. constructor. rewrite inf_term_step_prop at 1. simpl.
+        rewrite Heqcond. constructor. auto. etransitivity; eauto.
+    - rewrite inf_term_step_prop in H. simpl in H. apply inf_term_eq_conl in H.
+      edestruct IHHp as [ r' [ IH1 IH2 ] ]. eauto. exists r'. constructor; auto.
+      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
+  * edestruct (H Here). constructor. destruct H0. good_inversion H0.
+    destruct t0; try good_inversion H4.
+    - simpl in H4. rename n into y. remember (inf_image s y) as t'.
+      symmetry in Heqt'. destruct t'; good_inversion H4.
+      rewrite inf_term_step_prop in H. simpl in H. rewrite Heqt' in H. apply inf_term_eq_conr in H.
+      remember (name_eq_dec y x) as cond. symmetry in Heqcond. destruct cond. 2: {
+        edestruct (H p) as [ r' ]. eauto. destruct H0. exists r'. constructor; auto.
+        rewrite inf_term_step_prop at 1. simpl. rewrite Heqcond. rewrite Heqt'. constructor. auto.
+      }
+      subst y. rewrite Heqt' in H2.
+      edestruct (H2 Here). constructor. destruct H0. good_inversion H0.
+      rewrite inf_term_step_prop in H4. destruct t2; try good_inversion H4.
+      + simpl in H4. rename n0 into y. remember (inf_image s y) as t2.
+        destruct t2; good_inversion H4. symmetry in Heqt2.
+        rewrite inf_term_step_prop in H1. rewrite inf_term_step_prop in H2.
+        simpl in H1. simpl in H2. rewrite Heqt2 in H2. apply inf_term_eq_conr in H2.
+        destruct (name_eq_dec y x). subst y. contradiction. clear n.
+        edestruct (H1 Here). constructor. destruct H0. good_inversion H0.
+        destruct t1; good_inversion H4. clear H1.
+        edestruct (H p) as [ r1 ]. eauto. destruct H0.
+        edestruct (H2 p) as [ r2 ]. eauto. destruct H4.
+        exists r2. constructor. rewrite inf_term_step_prop at 1. simpl.
+        rewrite Heqcond. rewrite Heqt2. constructor. auto.
+        etransitivity; eauto.
+      + rewrite inf_term_step_prop in H2. simpl in H2. apply inf_term_eq_conr in H2.
+        rewrite inf_term_step_prop in H1. simpl in H1. edestruct (H1 Here). constructor.
+        destruct H0. good_inversion H0. destruct t1; good_inversion H4. apply inf_term_eq_conr in H1.
+        edestruct IHHp as [ r1 [ IH1 IH2 ] ]. etransitivity. eauto. eauto.
+        eapply inf_subst_apply_eq in H1. symmetry in H1.
+        edestruct (H1 p) as [ r2 ]. eauto. destruct H0.
+        exists r2. constructor. rewrite inf_term_step_prop at 1. simpl.
+        rewrite Heqcond. constructor. auto. etransitivity; eauto.
+    - rewrite inf_term_step_prop in H. simpl in H. apply inf_term_eq_conr in H.
+      edestruct IHHp as [ r' [ IH1 IH2 ] ]. eauto. exists r'. constructor; auto.
+      rewrite inf_term_step_prop at 1. simpl. constructor. auto.
+Qed.
+
+Lemma inf_subst_recursive_unifier s x t t'
+  (H1 : inf_term_eq t' (inf_subst_apply (inf_subst_singleton x t') t))
+  (H2 : inf_term_eq (inf_image s x) (inf_subst_apply s t)) (H3 : t <> InfVar x)
+: inf_term_eq (inf_image s x) (inf_subst_apply s t').
+Proof.
+  etransitivity. apply H2. etransitivity. eapply inf_subst_recursive_unifier_aux; eauto. symmetry.
+  apply inf_subst_apply_eq. auto.
+Qed.
+
+Definition inf_subst_triangular (s : inf_subst) : Prop :=
+  forall x y, In x (inf_subst_dom s) -> ~inf_subterm (inf_image s y) (InfVar x).
+
+Lemma inf_subst_triangular_prop s (H : inf_subst_triangular s)
+                              : inf_subst_eq (inf_subst_compose s s) s.
+Proof.
+  apply inf_subst_eq_ext. intro. rewrite inf_subst_compose_image.
+  symmetry. etransitivity. symmetry. apply inf_subst_apply_empty. symmetry.
+  apply inf_subst_apply_ext. intros y Hy.
+  rewrite inf_term_step_prop. simpl. replace (inf_image s y) with (InfVar y). reflexivity.
+  symmetry. apply inf_image_dom. intro. eapply H; eauto.
+Qed.
+
 Definition inf_subst_more_general (m s : inf_subst) : Prop :=
   exists (s' : inf_subst), inf_subst_eq s (inf_subst_compose s' m).
 
@@ -562,6 +717,30 @@ Qed.
 
 Instance inf_subst_more_general_preorder : RelationClasses.PreOrder inf_subst_more_general :=
   {| RelationClasses.PreOrder_Reflexive := _ ; RelationClasses.PreOrder_Transitive := _ |}.
+
+Example inf_subst_more_general_not_antisym
+  : ~RelationClasses.Antisymmetric _ inf_subst_eq inf_subst_more_general.
+Proof.
+  set (s1 := inf_subst_singleton 1 (InfVar 2)).
+  set (s2 := inf_subst_singleton 2 (InfVar 1)).
+  assert (H1 : inf_subst_more_general s1 s2). {
+    exists (inf_subst_singleton 2 (InfVar 1)). apply inf_subst_eq_ext. intro.
+    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl.
+    destruct (name_eq_dec x 1). subst. reflexivity.
+    destruct (name_eq_dec x 2); reflexivity.
+  }
+  assert (H2 : inf_subst_more_general s2 s1). {
+    exists (inf_subst_singleton 1 (InfVar 2)). apply inf_subst_eq_ext. intro.
+    rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl.
+    destruct (name_eq_dec x 2). subst. reflexivity.
+    destruct (name_eq_dec x 1); reflexivity.
+  }
+  intro. specialize (H s1 s2 H1 H2).
+  absurd (inf_term_eq (InfVar 2) (InfVar 1)).
+  * intro. edestruct (H0 Here). constructor. destruct H3. good_inversion H3. inversion H4.
+  * specialize (H (InfVar 1)).
+    rewrite inf_term_step_prop in H at 1. rewrite inf_term_step_prop in H. simpl in H. auto.
+Qed.
 
 Lemma inf_subst_more_general_eq m1 m2 s1 s2 (H1 : inf_subst_eq m1 m2) (H2 : inf_subst_eq s1 s2)
                                 (H3 : inf_subst_more_general m1 s1)
@@ -587,12 +766,34 @@ Proof.
   apply inf_subst_apply_eq. eauto.
 Qed.
 
+Lemma inf_unifier_refl t s : inf_unifier t t s.
+Proof. unfold inf_unifier. reflexivity. Qed.
+
+Lemma inf_unifier_sym t1 t2 s (H : inf_unifier t1 t2 s) : inf_unifier t2 t1 s.
+Proof. unfold inf_unifier. symmetry. auto. Qed.
+
 Lemma unifier_inf s t1 t2 : unifier s t1 t2 <-> inf_unifier (term_to_inf t1) (term_to_inf t2) (subst_to_inf s).
 Proof.
   unfold unifier. unfold inf_unifier. rewrite apply_subst_inf. rewrite apply_subst_inf.
   constructor; intro.
   * rewrite H. reflexivity.
   * apply term_to_inf_inj. auto.
+Qed.
+
+Lemma inf_unifier_more_general m s t1 t2 (H1 : inf_subst_more_general m s) (H2 : inf_unifier t1 t2 m)
+                             : inf_unifier t1 t2 s.
+Proof.
+  destruct H1 as [ s' H1 ]. unfold inf_unifier. etransitivity. apply H1.
+  etransitivity. symmetry. apply inf_subst_compose_spec. symmetry.
+  etransitivity. apply H1. etransitivity. symmetry. apply inf_subst_compose_spec.
+  apply inf_subst_apply_eq. symmetry. apply H2.
+Qed.
+
+Lemma inf_unifier_triangular s t1 t2 (H : inf_subst_triangular s)
+                           : inf_unifier t1 t2 s <-> inf_unifier (inf_subst_apply s t1) t2 s.
+Proof.
+  constructor; intro; unfold inf_unifier; etransitivity; eauto; clear H0. 2: symmetry.
+  all: etransitivity; try apply inf_subst_compose_spec; apply inf_subst_triangular_prop; auto.
 Qed.
 
 Definition inf_mgu (t1 t2 : inf_term) (s : inf_subst) : Prop :=
@@ -619,6 +820,13 @@ Proof.
     intros. apply H2. constructor; auto. apply inf_subst_more_general_empty.
   * destruct H as [ H1 H2 ]. constructor. constructor; auto. apply inf_subst_more_general_empty.
     intros. apply H2. destruct H as [ _ H ]. auto.
+Qed.
+
+Lemma inf_min_unifying_extension_sym t1 t2 s1 s2 (H : inf_min_unifying_extension t1 t2 s1 s2)
+                                   : inf_min_unifying_extension t2 t1 s1 s2.
+Proof.
+  destruct H as [ [ H1 H2 ] H3 ]. constructor. constructor. auto. apply inf_unifier_sym. auto.
+  intros. destruct H. apply H3. constructor. auto. apply inf_unifier_sym. auto.
 Qed.
 
 Lemma inf_min_unifying_extension_eq l1 l2 r1 r2 m1 m2 s1 s2
