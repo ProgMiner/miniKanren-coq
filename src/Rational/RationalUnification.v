@@ -34,7 +34,7 @@ Proof.
   constructor; intro.
   * induction s as [ | [ y t ] s IH ]. inversion H. simpl in H.
     apply ListSet.set_add_elim in H. unfold in_eqsys_dom. simpl.
-    destruct (name_eq_dec x y).
+destruct (name_eq_dec x y).
     - exists t. auto.
     - destruct H. subst y. contradiction. destruct IH as [ t' IH ]. apply H. exists t'. auto.
 * induction s as [ | [ y t ] s IH ]. destruct H as [ t H ]. inversion H.
@@ -504,9 +504,9 @@ end.
 Lemma wf_eqsys_image_hlp_step s x : inf_term_eq (wf_eqsys_image_hlp s (Var x))
                                                 (wf_eqsys_image_hlp s (snd (wf_eqsys_walk s x))).
 Proof.
-  remember (wf_eqsys_walk s x) as r. destruct r as [ y t ].
-  rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl. rewrite <- Heqr.
-  destruct t; try reflexivity. symmetry in Heqr.
+  remember (wf_eqsys_walk s x) as r. symmetry in Heqr. destruct r as [ y t ].
+  rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl. rewrite Heqr.
+  destruct t; try reflexivity.
   set (H := Heqr). apply wf_eqsys_walk_var in H. subst n.
   set (H := Heqr). rewrite wf_eqsys_walk_idemp in H. rewrite Heqr in H.
   simpl in H. rewrite H. reflexivity.
@@ -582,10 +582,8 @@ end.
 
 Lemma wf_eqsys_image_hlp_apply s t : wf_eqsys_image_hlp s t = wf_eqsys_apply s t.
 Proof.
-  induction t; rewrite inf_term_step_prop at 1; simpl.
-  * rewrite inf_term_step_prop. reflexivity.
-  * reflexivity.
-  * f_equal; auto.
+  induction t; rewrite inf_term_step_prop at 1; simpl; f_equal; auto.
+  symmetry. apply inf_term_step_prop.
 Qed.
 
 Lemma wf_eqsys_image_walk s x : inf_term_eq (wf_eqsys_image s x) (wf_eqsys_apply s (snd (wf_eqsys_walk s x))).
@@ -625,8 +623,7 @@ Proof.
     apply IH. destruct i; auto. subst. contradiction.
   * transitivity (InfVar x).
     - apply inf_image_dom. intro. apply n. apply eqsys_dom_spec. apply wf_eqsys_to_subst_dom'. auto.
-    - rewrite inf_term_step_prop. simpl.
-      erewrite (wf_eqsys_walk_ext _ _ (x, Var x)). auto.
+    - rewrite inf_term_step_prop. simpl. erewrite (wf_eqsys_walk_ext _ _ (x, Var x)). auto.
       constructor. apply in_eqsys_dom_inv. intro. apply n. apply eqsys_dom_spec. auto.
 Qed.
 
@@ -644,13 +641,10 @@ Proof.
 Qed.
 
 Lemma wf_eqsys_to_subst_apply s t
-  : inf_term_eq (inf_subst_apply (wf_eqsys_to_subst s) (term_to_inf t)) (wf_eqsys_apply s t).
+  : inf_subst_apply (wf_eqsys_to_subst s) (term_to_inf t) = wf_eqsys_apply s t.
 Proof.
-  symmetry. induction t; rewrite inf_term_step_prop; simpl.
-  * rewrite wf_eqsys_to_subst_image. fold (inf_term_step (wf_eqsys_image s n)).
-    rewrite <- inf_term_step_prop. reflexivity.
-  * rewrite inf_term_step_prop. simpl. reflexivity.
-  * apply inf_term_eq_con; auto.
+  symmetry. induction t. 2, 3: rewrite inf_term_step_prop; simpl; f_equal; auto.
+  simpl. rewrite inf_subst_apply_var, wf_eqsys_to_subst_image. auto.
 Qed.
 
 Lemma wf_eqsys_to_subst_eq s1 s2 (H : wf_eqsys_eq s1 s2)
@@ -731,9 +725,8 @@ Proof. rewrite <- wf_eqsys_to_subst_image. apply wf_eqsys_to_subst_image_rationa
 
 Corollary wf_eqsys_apply_rational s t : is_rational_term (wf_eqsys_apply s t).
 Proof.
-  eapply is_rational_eq. apply wf_eqsys_to_subst_apply.
-  apply inf_subst_apply_rational. apply wf_eqsys_to_subst_rational.
-  apply term_to_inf_rational.
+  rewrite <- wf_eqsys_to_subst_apply. apply inf_subst_apply_rational.
+  apply wf_eqsys_to_subst_rational. apply term_to_inf_rational.
 Qed.
 
 Lemma wf_eqsys_to_subst_extend_unbound s1 s2 x t (H1 : ~in_eqsys_dom (wf_eqsys_get s1) x)
@@ -760,11 +753,11 @@ Proof.
       edestruct wf_eqsys_walk_extend_unbound; eauto.
       + edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto.
         exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-        rewrite H. rewrite <- Heqres. constructor. auto.
+        rewrite H, <- Heqres. constructor. auto.
       + destruct H. exists t0. constructor; try reflexivity.
         rewrite inf_term_step_prop at 1. simpl. rewrite H.
-        destruct (name_eq_dec x x). 2: contradiction. simpl.
-        rewrite <- H0. rewrite <- Heqres. constructor. auto.
+        destruct (name_eq_dec x x); try contradiction. simpl.
+        rewrite <- H0, <- Heqres. constructor. auto.
     - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
       rewrite inf_term_step_prop at 1. simpl. constructor. auto.
   * rewrite inf_term_step_prop in Heql; destruct t'; good_inversion Heql.
@@ -772,11 +765,11 @@ Proof.
       edestruct wf_eqsys_walk_extend_unbound; eauto.
       + edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto.
         exists r'. constructor; auto. rewrite inf_term_step_prop at 1. simpl.
-        rewrite H. rewrite <- Heqres. constructor. auto.
+        rewrite H, <- Heqres. constructor. auto.
       + destruct H. exists t0. constructor; try reflexivity.
         rewrite inf_term_step_prop at 1. simpl. rewrite H.
-        destruct (name_eq_dec x x). 2: contradiction. simpl.
-        rewrite <- H0. rewrite <- Heqres. constructor. auto.
+        destruct (name_eq_dec x x); try contradiction. simpl.
+        rewrite <- H0, <- Heqres. constructor. auto.
     - edestruct IHHp as [ r' [ IH1 IH2 ] ]. auto. exists r'. constructor; auto.
       rewrite inf_term_step_prop at 1. simpl. constructor. auto.
 Qed.
@@ -805,20 +798,20 @@ Proof.
     - exists (Var n0). constructor.
     - edestruct (H Here) as [ t [ H1 H2 ] ]. constructor. good_inversion H1.
       rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2.
-      good_inversion H2. exists (Cst n0). constructor.
+      good_inversion H2. eexists. constructor.
     - edestruct (H Here) as [ t [ H1 H2 ] ]. constructor. good_inversion H1.
-      rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2. good_inversion H2.
+      rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2. inversion H2.
   * destruct t2.
     - exists (Var n0). constructor.
     - edestruct (H Here) as [ t [ H1 H2 ] ]. constructor. good_inversion H1.
-      rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2. good_inversion H2.
+      rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2. inversion H2.
     - edestruct (H Here) as [ t [ H1 H2 ] ]. constructor. good_inversion H1.
       rewrite inf_term_step_prop in H2 at 1. rewrite inf_term_step_prop in H2. good_inversion H2.
       unfold inf_unifier in H. rewrite inf_term_step_prop in H at 1. rewrite inf_term_step_prop in H.
       simpl in H.
       edestruct IHt1_1 as [ l H2 ]. eapply inf_term_eq_conl. eauto.
       edestruct IHt1_2 as [ r H3 ]. eapply inf_term_eq_conr. eauto.
-      exists (Con n0 l r). constructor; auto.
+      eexists. constructor; eauto.
 Qed.
 
 Corollary is_common_part_unifiable s t1 t2 (H : unifier s t1 t2) : exists t, is_common_part t1 t2 t.
@@ -870,6 +863,52 @@ Proof.
     symmetry in Heqo. apply common_part_none in Heqo. exfalso. apply Heqo. eexists. eauto.
 Qed.
 
+Lemma wf_eqsys_to_subst_inf_min_unifying_extension_same s s' x y z xt yt
+  (H : wf_eqsys_eq s s') (H1 : wf_eqsys_walk s x = (z, xt)) (H2 : wf_eqsys_walk s y = (z, yt))
+: inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s').
+Proof.
+  eapply inf_min_unifying_extension_eq. 1, 2, 3: reflexivity. apply wf_eqsys_to_subst_eq. eauto.
+  apply inf_min_unifying_extension_same.
+  eapply inf_unifier_eq. 3: apply wf_eqsys_to_subst_eq; eauto. all: try reflexivity.
+  fold (term_to_inf (Var x)). fold (term_to_inf (Var y)). unfold inf_unifier.
+  repeat rewrite wf_eqsys_to_subst_apply. simpl.
+  rewrite wf_eqsys_image_walk. rewrite H1. simpl.
+  rewrite wf_eqsys_image_walk. rewrite H2. simpl.
+  replace xt with yt. reflexivity. eapply wf_eqsys_walk_fst_inj; eauto.
+Qed.
+
+Lemma wf_eqsys_to_subst_inf_min_unifying_extension_extend_unbound s s' x y x' y' t
+  (H : wf_eqsys_get s' = (x', t) :: wf_eqsys_get s) (H1 : x' <> y')
+  (H2 : wf_eqsys_walk s x = (x', Var x')) (H3 : wf_eqsys_walk s y = (y', t))
+: inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s').
+Proof.
+  apply (inf_min_unifying_extension_unifier _ (InfVar x')). {
+    unfold inf_unifier. repeat rewrite inf_subst_apply_var. repeat rewrite wf_eqsys_to_subst_image.
+    rewrite wf_eqsys_image_walk. rewrite H2. reflexivity.
+  }
+  assert (~in_eqsys_dom (wf_eqsys_get s) x'). eapply wf_eqsys_walk_var_dom. eauto.
+  apply inf_min_unifying_extension_unbound.
+  * etransitivity. eapply wf_eqsys_to_subst_extend_unbound; eauto.
+    apply inf_subst_compose_eq; try reflexivity. rewrite inf_subst_apply_var.
+    rewrite wf_eqsys_to_subst_image. apply inf_subst_eq_ext. intro z.
+    destruct (name_eq_dec z x'). 2: repeat rewrite inf_image_singleton_other; auto; reflexivity.
+    subst z. repeat rewrite inf_image_singleton_same, wf_eqsys_image_walk.
+    replace (snd (wf_eqsys_walk s' y)) with (snd (wf_eqsys_walk s' x')). reflexivity.
+    assert (wf_eqsys_walk s' y = wf_eqsys_walk s y). {
+      edestruct wf_eqsys_walk_extend_unbound as [ | [] ]; eauto.
+      rewrite H4 in H3. good_inversion H3. contradiction.
+    }
+    rewrite H4, H3. edestruct wf_eqsys_walk_extend_new; eauto. rewrite H5. auto.
+    destruct H5. subst. set (H' := H3). apply wf_eqsys_walk_var in H'. subst x0.
+    f_equal. apply wf_eqsys_walk_ext.
+    eapply ESWalkWalk. rewrite H. simpl. destruct (name_eq_dec x' x'). auto. contradiction.
+    apply ESWalkVar. apply in_eqsys_dom_inv. eapply wf_eqsys_walk_var_dom. rewrite H4. eauto.
+  * intro. apply wf_eqsys_to_subst_dom in H4. auto.
+  * rewrite inf_subst_apply_var, wf_eqsys_to_subst_image.
+    rewrite inf_term_step_prop at 1. simpl. rewrite H3. intro.
+    destruct t; good_inversion H4. apply wf_eqsys_walk_var in H3. auto.
+Qed.
+
 Definition wf_eqsys_union_result_hlp (s : wf_eqsys) (x y : name)
                                      (res : option (wf_eqsys * option (term * term))) : Prop :=
 match res with
@@ -895,6 +934,14 @@ Definition wf_eqsys_union_spec
   (union : wf_eqsys -> name -> name -> option (wf_eqsys * option (term * term))) : Prop :=
   forall s x y, wf_eqsys_union_result_hlp s x y (union s x y).
 
+(*
+Тут есть варианты:
+1. Можно в случае, когда с одной стороны свободная переменная, цеплять её за Var другой переменной,
+   что будет сразу же помещать их в одну компоненту связности
+2. Можно в случае, когда с обеих сторон связанные переменные, вместо common part использовать терм
+   левой или правой переменной (не важно)
+*)
+
 Definition eqsys_union (s : wf_eqsys) (x y : name) : option (eqsys * option (term * term)) :=
   let (x, xt) := wf_eqsys_walk s x in
   let (y, yt) := wf_eqsys_walk s y in
@@ -905,7 +952,7 @@ Definition eqsys_union (s : wf_eqsys) (x y : name) : option (eqsys * option (ter
   | _, Var _ => Some ((y, xt) :: wf_eqsys_get s, None)
   | _, _ =>
     match common_part xt yt with
-    | Some t => Some ((x, t) :: wf_eqsys_get s, Some (xt, yt))
+    | Some t => Some ((x, Var y) :: (y, t) :: wf_eqsys_get s, Some (xt, yt))
     | None => None
     end
   end.
@@ -931,8 +978,16 @@ Proof.
     destruct (name_eq_dec y' y'). auto. contradiction.
   * remember (common_part (Cst n0) (Cst n1)) as t. destruct t as [ t | ]; good_inversion H1.
     symmetry in Heqt. apply common_part_some in Heqt. good_inversion Heqt.
-    apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCst. simpl.
-    destruct (name_eq_dec x' x'). auto. contradiction.
+    assert (eqsys_well_formed ((y', Cst n1) :: wf_eqsys_get s)). {
+      apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCst. simpl.
+      destruct (name_eq_dec y' y'). auto. contradiction.
+    }
+    set (s' := exist _ _ H).
+    replace ((y', Cst n1) :: wf_eqsys_get s) with (wf_eqsys_get s') by reflexivity.
+    apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkWalk. simpl.
+    destruct (name_eq_dec x' x'). auto. contradiction. eapply ESWalkCst. simpl.
+    destruct (name_eq_dec y' x'). subst. contradiction.
+    destruct (name_eq_dec y' y'). auto. contradiction.
   * remember (common_part (Cst n0) (Con n1 yt1 yt2)) as t. destruct t as [ t | ]; good_inversion H1.
     symmetry in Heqt. apply common_part_some in Heqt. inversion Heqt.
   * apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCon. simpl.
@@ -942,8 +997,16 @@ Proof.
   * remember (common_part (Con n0 xt1 xt2) (Con n1 yt1 yt2)) as t.
     destruct t as [ t | ]; good_inversion H1. symmetry in Heqt.
     apply common_part_some in Heqt. good_inversion Heqt.
-    apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCon. simpl.
-    destruct (name_eq_dec x' x'). auto. contradiction.
+    assert (eqsys_well_formed ((y', Con n1 l r) :: wf_eqsys_get s)). {
+      apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCon. simpl.
+      destruct (name_eq_dec y' y'). auto. contradiction.
+    }
+    set (s' := exist _ _ H).
+    replace ((y', Con n1 l r) :: wf_eqsys_get s) with (wf_eqsys_get s') by reflexivity.
+    apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkWalk. simpl.
+    destruct (name_eq_dec x' x'). auto. contradiction. eapply ESWalkCon. simpl.
+    destruct (name_eq_dec y' x'). subst. contradiction.
+    destruct (name_eq_dec y' y'). auto. contradiction.
 Qed.
 
 Lemma wf_eqsys_union_aux s x y : { res | match res with
@@ -968,194 +1031,32 @@ Proof. unfold wf_eqsys_union in H. destruct (wf_eqsys_union_aux s x y). simpl in
 Fact wf_eqsys_union_none s x y (H : wf_eqsys_union s x y = None) : eqsys_union s x y = None.
 Proof. unfold wf_eqsys_union in H. destruct (wf_eqsys_union_aux s x y). simpl in H. subst. auto. Qed.
 
-Lemma wf_eqsys_union_prop_same s x y z xt yt
-                               (H1 : wf_eqsys_walk s x = (z, xt))
-                               (H2 : wf_eqsys_walk s y = (z, yt))
-                             : wf_eqsys_union_result_hlp s x y (wf_eqsys_union s x y).
-Proof.
-  remember (wf_eqsys_union s x y) as res. symmetry in Heqres. destruct res as [ res | ].
-  2: {
-    apply wf_eqsys_union_none in Heqres. unfold eqsys_union in Heqres. rewrite H1, H2 in Heqres.
-    destruct (name_eq_dec z z). inversion Heqres. contradiction.
-  }
-  destruct res as [ s' ts ]. apply wf_eqsys_union_some in Heqres.
-  unfold eqsys_union in Heqres. rewrite H1, H2 in Heqres.
-  destruct (name_eq_dec z z); try contradiction. clear e. good_inversion Heqres; simpl.
-  set (H' := H2). eapply wf_eqsys_walk_fst_inj in H'. 2: apply H1. subst. rename yt into t.
-  eapply inf_min_unifying_extension_eq; try apply inf_min_unifying_extension_same.
-  1, 2, 3: reflexivity. apply wf_eqsys_to_subst_eq. auto.
-  apply inf_unifier_triangular. apply wf_eqsys_to_subst_triangular. apply inf_unifier_sym.
-  apply inf_unifier_triangular. apply wf_eqsys_to_subst_triangular. apply inf_unifier_sym.
-  rewrite (inf_term_step_prop (inf_subst_apply _ (InfVar x))).
-  rewrite (inf_term_step_prop (inf_subst_apply _ (InfVar y))).
-  simpl. repeat rewrite wf_eqsys_to_subst_image. simpl. rewrite H1, H2.
-  apply inf_unifier_refl.
-Qed.
-
-Lemma wf_eqsys_union_prop_var_l s x y x' (H1 : wf_eqsys_walk s x = (x', Var x'))
-                                (H2 : forall y' yt, wf_eqsys_walk s y = (y', yt) -> x' <> y')
-                              : wf_eqsys_union_result_hlp s x y (wf_eqsys_union s x y).
-Proof.
-  remember (wf_eqsys_union s x y) as res. symmetry in Heqres. destruct res as [ res | ].
-  2: {
-    apply wf_eqsys_union_none in Heqres. unfold eqsys_union in Heqres. rewrite H1 in Heqres.
-    destruct (wf_eqsys_walk s y). destruct (name_eq_dec x' n); inversion Heqres.
-  }
-  destruct res as [ s' ts ]. apply wf_eqsys_union_some in Heqres.
-  unfold eqsys_union in Heqres. rewrite H1 in Heqres.
-  remember (wf_eqsys_walk s y) as y'. destruct y' as [ y' t ]. symmetry in Heqy'.
-  destruct (name_eq_dec x' y'); good_inversion Heqres; simpl. exfalso. eapply H2; auto. clear H2.
-  assert (~in_eqsys_dom (wf_eqsys_get s) x'). eapply wf_eqsys_walk_var_dom. eauto.
-  assert (wf_eqsys_walk s' y = wf_eqsys_walk s y). {
-    edestruct wf_eqsys_walk_extend_unbound; eauto. destruct H2; auto.
-    rewrite H2 in Heqy'. good_inversion Heqy'. contradiction.
-  }
-  assert (wf_eqsys_walk s' x = wf_eqsys_walk s' x'). {
-    edestruct wf_eqsys_walk_extend_unbound; eauto. 2: destruct H3; eauto.
-    rewrite H3 in H1. apply wf_eqsys_walk_var_dom in H1. exfalso. apply H1.
-    eexists. rewrite <- H0. simpl. destruct (name_eq_dec x' x'); try contradiction. auto.
-  }
-  assert (snd (wf_eqsys_walk s' x') = t). {
-    edestruct wf_eqsys_walk_extend_new; eauto. rewrite H4. auto. destruct H4. subst.
-    set (H' := Heqy'). apply wf_eqsys_walk_var in H'. subst x0.
-    replace (wf_eqsys_walk s' x') with (y', Var y'). auto. symmetry.
-    apply wf_eqsys_walk_ext. econstructor. rewrite <- H0. simpl.
-    destruct (name_eq_dec x' x'); try contradiction. auto.
-    constructor. apply in_eqsys_dom_inv. eapply wf_eqsys_walk_var_dom. rewrite H2. eauto.
-  }
-  symmetry in H0. constructor. constructor.
-  * eapply wf_eqsys_to_subst_extend_unbound_more_general; eauto.
-  * apply inf_unifier_triangular. apply wf_eqsys_to_subst_triangular.
-    rewrite inf_term_step_prop at 1. simpl. rewrite wf_eqsys_to_subst_image.
-    fold (inf_term_step (wf_eqsys_image s' x)). rewrite <- inf_term_step_prop.
-    eapply inf_unifier_eq. symmetry. apply wf_eqsys_image_walk. reflexivity. reflexivity.
-    rewrite H3. rewrite H4. apply inf_unifier_sym. apply inf_unifier_triangular.
-    apply wf_eqsys_to_subst_triangular. rewrite inf_term_step_prop at 1. simpl.
-    rewrite wf_eqsys_to_subst_image. fold (inf_term_step (wf_eqsys_image s' y)).
-    rewrite <- inf_term_step_prop. eapply inf_unifier_eq. symmetry. apply wf_eqsys_image_walk.
-    reflexivity. reflexivity. rewrite H2. rewrite Heqy'. simpl. apply inf_unifier_refl.
-  * intro s1. intros. destruct H5 as [ [ s1' H5 ] H6 ].
-    exists s1'. etransitivity. eauto. symmetry.
-    etransitivity. apply inf_subst_compose_eq. reflexivity.
-    eapply wf_eqsys_to_subst_extend_unbound; eauto.
-    etransitivity. apply inf_subst_compose_assoc.
-    apply inf_subst_compose_eq; try reflexivity.
-    apply inf_subst_eq_ext. intro z. rewrite inf_subst_compose_image. simpl.
-    destruct (name_eq_dec z x'). 2: {
-      rewrite inf_term_step_prop at 1. simpl. fold (inf_term_step (inf_image s1' z)).
-      rewrite <- inf_term_step_prop. reflexivity.
-    }
-    subst z. symmetry. eapply inf_subst_recursive_unifier.
-    - etransitivity. apply wf_eqsys_image_walk. rewrite H4.
-      etransitivity. symmetry. apply wf_eqsys_to_subst_apply.
-      etransitivity. eapply wf_eqsys_to_subst_extend_unbound; eauto.
-      symmetry. apply inf_subst_compose_spec.
-    - replace (inf_image s1' x')
-         with (inf_subst_apply s1' (inf_subst_apply (wf_eqsys_to_subst s) (InfVar x))).
-      etransitivity. apply inf_subst_compose_spec. etransitivity. symmetry. apply H5.
-      etransitivity. apply H6. etransitivity. apply H5.
-      etransitivity. symmetry. apply inf_subst_compose_spec. apply inf_subst_apply_eq.
-      replace (inf_subst_apply (wf_eqsys_to_subst s) (InfVar y)) with (wf_eqsys_image s y).
-      etransitivity. apply wf_eqsys_image_walk. rewrite Heqy'.
-      symmetry. apply wf_eqsys_to_subst_apply.
-      rewrite inf_term_step_prop. simpl. rewrite wf_eqsys_to_subst_image.
-      rewrite inf_term_step_prop at 1. auto.
-      rewrite inf_term_step_prop at 1. simpl. rewrite wf_eqsys_to_subst_image. simpl.
-      rewrite H1. rewrite inf_term_step_prop. auto.
-    - intro. rewrite inf_term_step_prop in H7 at 1. destruct t; good_inversion H7.
-      rewrite wf_eqsys_to_subst_image in H9. simpl in H9.
-      set (H' := Heqy'). apply wf_eqsys_walk_var in H'. subst n0.
-      apply wf_eqsys_walk_var_dom in Heqy'. apply in_eqsys_dom_inv in Heqy'.
-      erewrite wf_eqsys_walk_ext in H9. 2: constructor; auto. simpl in H9.
-      good_inversion H9. contradiction.
-Qed.
-
-Lemma wf_eqsys_union_prop_var_r s x y y' (H1 : wf_eqsys_walk s y = (y', Var y'))
-                                (H2 : forall x' xt, wf_eqsys_walk s x = (x', xt) -> x' <> y')
-                                (H3 : forall x' z, wf_eqsys_walk s x <> (x', Var z))
-                              : wf_eqsys_union_result_hlp s x y (wf_eqsys_union s x y).
-Proof.
-  remember (wf_eqsys_union s x y) as res. symmetry in Heqres. destruct res as [ res | ]. 2: {
-    apply wf_eqsys_union_none in Heqres. unfold eqsys_union in Heqres. rewrite H1 in Heqres.
-    destruct (wf_eqsys_walk s x). destruct (name_eq_dec n y'). inversion Heqres.
-    destruct t; inversion Heqres.
-  }
-  destruct res as [ s' ts ]. apply wf_eqsys_union_some in Heqres.
-  unfold eqsys_union in Heqres. rewrite H1 in Heqres.
-  remember (wf_eqsys_walk s x) as x'. destruct x' as [ x' t ]. symmetry in Heqx'.
-  destruct (name_eq_dec x' y'); good_inversion Heqres; simpl. exfalso. eapply H2; auto.
-  assert (Some ((y', t) :: wf_eqsys_get s, None) = Some (wf_eqsys_get s', ts)). {
-    destruct t; auto. exfalso. eapply H3. auto.
-  }
-  clear H3 H0. good_inversion H.
-  set (H' := H1). eapply wf_eqsys_union_prop_var_l in H'. 2: {
-    intros. symmetry. eapply H2. rewrite <- Heqx'. eauto.
-  }
-  clear H2. remember (wf_eqsys_union s y x) as res'. symmetry in Heqres'.
-  destruct res' as [ res' | ]. 2: {
-    apply wf_eqsys_union_none in Heqres'. unfold eqsys_union in Heqres'. rewrite H1 in Heqres'.
-    rewrite Heqx' in Heqres'. destruct (name_eq_dec y' x'); inversion Heqres'.
-  }
-  destruct res' as [ s1 ts1 ]. apply wf_eqsys_union_some in Heqres'.
-  unfold eqsys_union in Heqres'. rewrite H1, Heqx' in Heqres'.
-  destruct (name_eq_dec y' x'). subst. contradiction. clear n0.
-  good_inversion Heqres'. simpl in H'. apply inf_min_unifying_extension_sym.
-  eapply inf_min_unifying_extension_eq; eauto; try reflexivity.
-  apply wf_eqsys_to_subst_eq. unfold wf_eqsys_eq. rewrite <- H0. auto.
-Qed.
-
 Lemma wf_eqsys_union_prop : wf_eqsys_union_spec wf_eqsys_union.
 Proof.
   intros s x y. remember (wf_eqsys_union s x y) as res.
   symmetry in Heqres. destruct res as [ res | ].
-  * destruct res as [ s' ts ].
+  * destruct res as [ s' ts ]. apply wf_eqsys_union_some in Heqres. unfold eqsys_union in Heqres.
     remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' tx ].
     remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' ty ].
-    remember (name_eq_dec x' y') as cond. symmetry in Heqcond. destruct cond. {
-      subst y'. rewrite <- Heqres. eapply wf_eqsys_union_prop_same; eauto.
-    }
+    remember (name_eq_dec x' y') as cond. symmetry in Heqcond. destruct cond.
+    good_inversion Heqres. eapply wf_eqsys_to_subst_inf_min_unifying_extension_same; eauto.
     destruct tx.
     set (H' := Heqres1). apply wf_eqsys_walk_var in H'. subst n0.
-    rewrite <- Heqres. eapply wf_eqsys_union_prop_var_l; eauto. {
-      intros. rewrite H in Heqres2. good_inversion Heqres2. auto.
-    }
-    all: destruct ty.
-    1, 4: set (H' := Heqres2); apply wf_eqsys_walk_var in H'; subst n1;
-        rewrite <- Heqres; eapply wf_eqsys_union_prop_var_r; eauto;
-        [ intros; rewrite H in Heqres1; good_inversion Heqres1; auto
-        | intros; rewrite Heqres1; intro; inversion H
-        ].
-    all: apply wf_eqsys_union_some in Heqres; unfold eqsys_union in Heqres.
-    all: rewrite Heqres1, Heqres2, Heqcond in Heqres.
+    good_inversion Heqres. eapply wf_eqsys_to_subst_inf_min_unifying_extension_extend_unbound; eauto.
+    all: destruct ty; good_inversion Heqres.
+    1, 4: apply inf_min_unifying_extension_sym.
+    1, 2: set (H' := Heqres2); apply wf_eqsys_walk_var in H'; subst n1.
+    1, 2: eapply wf_eqsys_to_subst_inf_min_unifying_extension_extend_unbound; [ | symmetry | .. ]; eauto.
     - remember (common_part (Cst n0) (Cst n1)) as res'. symmetry in Heqres'.
-      destruct res'; good_inversion Heqres. apply common_part_some in Heqres'.
-      good_inversion Heqres'.
-      assert (inf_subst_eq (wf_eqsys_to_subst s) (wf_eqsys_to_subst s')). {
-        apply wf_eqsys_to_subst_ext_lookup. intro z. rewrite <- H0. simpl.
-        destruct (name_eq_dec z x'); auto. subst z.
-        assert (eqsys_walk_result (wf_eqsys_get s) x' (x', Cst n1)). {
-          set (H' := Heqres1). rewrite wf_eqsys_walk_idemp in H'.
-          rewrite Heqres1 in H'. simpl in H'. rewrite <- H'. apply wf_eqsys_walk_prop.
-        }
-        set (H' := H). good_inversion H'; auto. exfalso. eapply eqsys_walk_result_last; eauto.
-      }
-      simpl. intros. destruct H1 as [ [ H1 H2 ] H3 ]. constructor. constructor.
-      + eapply inf_subst_more_general_eq; eauto. symmetry. auto. reflexivity.
-      + destruct H1 as [ s1 H1 ]. unfold inf_unifier. etransitivity. apply H1. symmetry.
-        etransitivity. apply H1. symmetry. repeat rewrite <- inf_subst_compose_spec.
-        apply inf_subst_apply_eq.
-        etransitivity. symmetry. apply H. symmetry. etransitivity. symmetry. apply H.
-        rewrite inf_term_step_prop at 1. rewrite inf_term_step_prop. simpl.
-        repeat rewrite wf_eqsys_to_subst_image. simpl. rewrite Heqres1, Heqres2. reflexivity.
-      + intros s1 H4. destruct H4. apply H3. constructor.
-        eapply inf_subst_more_general_eq; eauto. reflexivity. apply inf_unifier_refl.
-    - remember (common_part (Cst n0) (Con n1 ty1 ty2)) as res'. symmetry in Heqres'.
-      destruct res'; good_inversion Heqres. apply common_part_some in Heqres'. inversion Heqres'.
-    - remember (common_part (Con n0 tx1 tx2) (Cst n1)) as res'. symmetry in Heqres'.
-      destruct res'; good_inversion Heqres. apply common_part_some in Heqres'. inversion Heqres'.
-    - remember (common_part (Con n0 tx1 tx2) (Con n1 ty1 ty2)) as res'. symmetry in Heqres'.
-      destruct res'; good_inversion Heqres. apply common_part_some in Heqres'. simpl.
+      destruct res'; good_inversion H0. apply common_part_some in Heqres'. simpl.
       admit.
+    - remember (common_part (Cst n0) (Con n1 ty1 ty2)) as res'. symmetry in Heqres'.
+      destruct res'; good_inversion H0. apply common_part_some in Heqres'. inversion Heqres'.
+    - remember (common_part (Con n0 tx1 tx2) (Cst n1)) as res'. symmetry in Heqres'.
+      destruct res'; good_inversion H0. apply common_part_some in Heqres'. inversion Heqres'.
+    - remember (common_part (Con n0 tx1 tx2) (Con n1 ty1 ty2)) as res'. symmetry in Heqres'.
+      destruct res'; good_inversion H0. apply common_part_some in Heqres'. simpl.
+      intros. admit.
   * apply wf_eqsys_union_none in Heqres. unfold eqsys_union in Heqres.
     remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' xt ].
     remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' yt ].
