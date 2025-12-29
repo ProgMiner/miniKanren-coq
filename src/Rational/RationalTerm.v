@@ -179,6 +179,31 @@ Qed.
 Instance inf_term_eq_equiv : RelationClasses.Equivalence inf_term_eq :=
   RelationClasses.Build_Equivalence _ _ _ _.
 
+CoInductive inf_term_coinductive_eq : inf_term -> inf_term -> Prop :=
+| InfVarEq x : inf_term_coinductive_eq (InfVar x) (InfVar x)
+| InfCstEq c : inf_term_coinductive_eq (InfCst c) (InfCst c)
+| InfConEq f l1 l2 r1 r2 : inf_term_coinductive_eq l1 l2 -> inf_term_coinductive_eq r1 r2
+                        -> inf_term_coinductive_eq (InfCon f l1 r1) (InfCon f l2 r2)
+.
+
+Lemma inf_term_eq_correct t1 t2 (H : inf_term_eq t1 t2) : inf_term_coinductive_eq t1 t2.
+Proof.
+  revert t1 t2 H. cofix IH. intros.
+  edestruct (H Here) as [ ? [] ]. constructor. good_inversion H0. rename x into t2.
+  destruct t1; destruct t2; good_inversion H1; constructor; apply IH.
+  eapply inf_term_eq_conl. eauto. eapply inf_term_eq_conr. eauto.
+Qed.
+
+Lemma inf_term_eq_complete t1 t2 (H : inf_term_coinductive_eq t1 t2) : inf_term_eq t1 t2.
+Proof.
+  intros p l Hp. revert t2 H. induction Hp; intros.
+  * good_inversion H; eexists; (constructor; [ constructor | ]); simpl; auto.
+  * good_inversion H. apply IHHp in H4. destruct H4 as [ r' [ IH1 IH2 ] ].
+    exists r'. constructor; auto. constructor. auto.
+  * good_inversion H. apply IHHp in H5. destruct H5 as [ r' [ IH1 IH2 ] ].
+    exists r'. constructor; auto. constructor. auto.
+Qed.
+
 Lemma term_to_inf_inj t1 t2 (H : inf_term_eq (term_to_inf t1) (term_to_inf t2)) : t1 = t2.
 Proof.
   revert t2 H. induction t1; intros.
@@ -795,6 +820,13 @@ Lemma inf_unifier_triangular s t1 t2 (H : inf_subst_triangular s)
 Proof.
   constructor; intro; unfold inf_unifier; etransitivity; eauto; clear H0. 2: symmetry.
   all: etransitivity; try apply inf_subst_compose_spec; apply inf_subst_triangular_prop; auto.
+Qed.
+
+Lemma inf_unifier_compose s1 s2 t1 t2 (H : inf_unifier t1 t2 s2)
+                        : inf_unifier t1 t2 (inf_subst_compose s1 s2).
+Proof.
+  unfold inf_unifier. repeat rewrite <- inf_subst_compose_spec.
+  apply inf_subst_apply_eq. apply H.
 Qed.
 
 Definition inf_mgu (t1 t2 : inf_term) (s : inf_subst) : Prop :=
