@@ -829,6 +829,13 @@ Proof.
   apply inf_subst_apply_eq. apply H.
 Qed.
 
+Definition inf_unifying_extension (t1 t2 : inf_term) (m s : inf_subst) : Prop :=
+  inf_subst_more_general m s /\ inf_unifier t1 t2 s.
+
+Lemma inf_unifying_extension_sym t1 t2 m s (H : inf_unifying_extension t1 t2 m s)
+                               : inf_unifying_extension t2 t1 m s.
+Proof. destruct H. constructor. auto. apply inf_unifier_sym. auto. Qed.
+
 Definition inf_mgu (t1 t2 : inf_term) (s : inf_subst) : Prop :=
   inf_min_subst (inf_unifier t1 t2) s.
 
@@ -840,6 +847,10 @@ Proof. constructor. constructor; auto. reflexivity. intros. destruct H0. auto. Q
 
 Definition inf_min_unifying_extension (t1 t2 : inf_term) (m s : inf_subst) : Prop :=
   inf_min_subst_extension (inf_unifier t1 t2) m s.
+
+Fact inf_unifying_extension_min t1 t2 m s (H : inf_min_unifying_extension t1 t2 m s)
+                              : inf_unifying_extension t1 t2 m s.
+Proof. destruct H. auto. Qed.
 
 Lemma inf_min_unifying_extension_same t1 t2 s (H : inf_unifier t1 t2 s)
                                     : inf_min_unifying_extension t1 t2 s s.
