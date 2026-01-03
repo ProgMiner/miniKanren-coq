@@ -1,4 +1,8 @@
+From Stdlib Require Import Wellfounded.Lexicographic_Product.
+From Stdlib Require Import Relations.Relation_Operators.
+From Stdlib Require Import Sorting.Permutation.
 From Stdlib Require Import List.
+From Stdlib Require Import Lia.
 Import ListNotations.
 
 Require Import Unification.
@@ -37,7 +41,7 @@ Proof.
   * induction s as [ | [ y t ] s IH ]. inversion H. simpl in H.
     apply ListSet.set_add_elim in H. unfold in_eqsys_dom. simpl.
 destruct (name_eq_dec x y).
-    - exists t. auto.
+- exists t. auto.
     - destruct H. subst y. contradiction. destruct IH as [ t' IH ]. apply H. exists t'. auto.
 * induction s as [ | [ y t ] s IH ]. destruct H as [ t H ]. inversion H.
     destruct H as [ t' H ]. simpl in H. destruct (name_eq_dec x y).
@@ -89,6 +93,193 @@ Lemma eqsys_rhs_subterms s t : In t (eqsys_subterms s)
                            <-> (exists t', In t' (eqsys_rhs s) /\ In t (term_subterms t')).
 Proof. apply in_flat_map. Qed.
 
+Fixpoint fv_terms (ts : list term) : var_set :=
+match ts with
+| [] => var_set_empty
+| t :: ts => var_set_union (fv_term t) (fv_terms ts)
+end.
+
+Lemma fv_terms_nodup ts : NoDup (fv_terms ts).
+Proof. induction ts as [ | t ]. constructor. apply ListSet.set_union_nodup. apply fv_term_nodup. auto. Qed.
+
+Lemma fv_terms_in x ts : In x (fv_terms ts) <-> Exists (fun t => In x (fv_term t)) ts.
+Proof.
+  induction ts as [ | t ]. constructor; intros; inversion H.
+  constructor; intros.
+  * simpl in H. apply ListSet.set_union_elim in H. destruct H. left. auto. right. apply IHts. auto.
+  * good_inversion H. apply ListSet.set_union_intro1. auto.
+    apply ListSet.set_union_intro2. apply IHts. auto.
+Qed.
+
+Definition eqsys_vars (s : eqsys) : var_set := var_set_union (eqsys_dom s) (fv_terms (eqsys_rhs s)).
+
+Lemma eqsys_vars_nodup s : NoDup (eqsys_vars s).
+Proof. apply ListSet.set_union_nodup. apply eqsys_dom_nodup. apply fv_terms_nodup. Qed.
+
+Lemma eqsys_vars_in s x (H : In x (eqsys_vars s))
+                  : in_eqsys_dom s x \/ exists t, In t (eqsys_rhs s) /\ In x (fv_term t).
+Proof.
+  apply ListSet.set_union_elim in H. destruct H.
+  * left. apply eqsys_dom_spec. auto.
+  * right. apply Exists_exists. apply fv_terms_in. auto.
+Qed.
+
+Lemma eqsys_vars_in_dom s x (H : in_eqsys_dom s x) : In x (eqsys_vars s).
+Proof. apply ListSet.set_union_intro1. apply eqsys_dom_spec. auto. Qed.
+
+Lemma eqsys_vars_in_rhs s t x (H1 : In t (eqsys_rhs s)) (H2 : In x (fv_term t)) : In x (eqsys_vars s).
+Proof. apply ListSet.set_union_intro2. apply fv_terms_in. apply Exists_exists. eexists. constructor; eauto. Qed.
+
+Definition is_eqsys_root (s : eqsys) (x : name) : bool :=
+match eqsys_lookup s x with
+| Some (Var y) => false
+| _ => true
+end.
+
+Lemma is_eqsys_root_true s x : is_eqsys_root s x = true <-> forall y, eqsys_lookup s x <> Some (Var y).
+Proof.
+  unfold is_eqsys_root. destruct (eqsys_lookup s x) as [ [] | ].
+  constructor; intros. inversion H. exfalso. eapply H. auto.
+  all: constructor; intros; auto; intro; inversion H0.
+Qed.
+
+Lemma is_eqsys_root_false s x : is_eqsys_root s x = false <-> exists y, eqsys_lookup s x = Some (Var y).
+Proof.
+  unfold is_eqsys_root. destruct (eqsys_lookup s x) as [ [] | ].
+  constructor; intros; auto. eexists. auto.
+  all: constructor; intros; good_inversion H; inversion H0.
+Qed.
+
+Definition eqsys_roots (s : eqsys) (xs : var_set) : var_set := filter (is_eqsys_root s) xs.
+
+Lemma eqsys_roots_nodup s xs (H : NoDup xs) : NoDup (eqsys_roots s xs).
+Proof. apply NoDup_filter. auto. Qed.
+
+Lemma eqsys_roots_in s xs x (H1 : In x xs) (H2 : is_eqsys_root s x = true) : In x (eqsys_roots s xs).
+Proof. apply filter_In. constructor; auto. Qed.
+
+Lemma eqsys_roots_in_root s xs x (H : In x (eqsys_roots s xs)) : is_eqsys_root s x = true.
+Proof. apply filter_In in H. apply H. Qed.
+
+Lemma eqsys_roots_in_xs s xs x (H : In x (eqsys_roots s xs)) : In x xs.
+Proof. apply filter_In in H. apply H. Qed.
+
+Polymorphic Lemma NoDup_length_ext [A] (xs : list A) ys (H1 : NoDup xs) (H2 : NoDup ys)
+                                   (H3 : incl xs ys) (H4 : incl ys xs)
+                                 : length xs = length ys.
+Proof. apply PeanoNat.Nat.le_antisymm; apply NoDup_incl_length; auto. Qed.
+
+Definition eqsys_roots_num (s : eqsys) (xs : var_set) : nat := var_set_size (eqsys_roots s xs).
+
+Lemma eqsys_roots_num_extend_nonvar s xs x t (H1 : NoDup xs) (H2 : In x xs)
+                                    (H3 : is_eqsys_root s x = true) (H4 : forall y, t <> Var y)
+                               : eqsys_roots_num s xs = eqsys_roots_num ((x, t) :: s) xs.
+Proof.
+  apply NoDup_length_ext; try apply eqsys_roots_nodup; auto.
+  * intros z ?. apply eqsys_roots_in. apply eqsys_roots_in_xs in H. auto.
+    remember (name_eq_dec z x) as cond. symmetry in Heqcond. destruct cond.
+    apply is_eqsys_root_true. intro y. simpl. rewrite Heqcond. intro. good_inversion H0. eapply H4. auto.
+    unfold is_eqsys_root. simpl. rewrite Heqcond. apply eqsys_roots_in_root in H. auto.
+  * intros z ?. apply eqsys_roots_in. apply eqsys_roots_in_xs in H. auto.
+    apply eqsys_roots_in_root in H. unfold is_eqsys_root in H. simpl in H.
+    destruct (name_eq_dec z x); auto. subst. auto.
+Qed.
+
+Lemma eqsys_roots_num_extend_var s xs x y (H1 : NoDup xs) (H2 : In x xs) (H3 : is_eqsys_root s x = true)
+                               : eqsys_roots_num s xs = 1 + eqsys_roots_num ((x, Var y) :: s) xs.
+Proof.
+  refine (_ : _ = var_set_size (x :: eqsys_roots ((x, Var y) :: s) xs)). apply NoDup_length_ext.
+  * apply eqsys_roots_nodup. auto.
+  * constructor. intro. apply eqsys_roots_in_root in H. unfold is_eqsys_root in H. simpl in H.
+    destruct (name_eq_dec x x). inversion H. contradiction. apply eqsys_roots_nodup. auto.
+  * intros z ?. remember (name_eq_dec z x) as cond. destruct cond. left. auto.
+    symmetry in Heqcond. right. apply eqsys_roots_in. eapply eqsys_roots_in_xs. eauto.
+    unfold is_eqsys_root. simpl. rewrite Heqcond. eapply eqsys_roots_in_root. eauto.
+  * intros z ?. destruct H; try subst z; apply eqsys_roots_in; auto.
+    eapply eqsys_roots_in_xs. eauto. apply eqsys_roots_in_root in H. unfold is_eqsys_root in H.
+    simpl in H. destruct (name_eq_dec z x). inversion H. auto.
+Qed.
+
+Fixpoint term_nonvar_size (t : term) : nat :=
+match t with
+| Var _ => 0
+| Cst _ => 1
+| Con _ l r => 1 + term_nonvar_size l + term_nonvar_size r
+end.
+
+Definition eqsys_rhs_nonvar_size (s : eqsys) (x : name) : nat :=
+match eqsys_lookup s x with
+| None => 0
+| Some t => term_nonvar_size t
+end.
+
+Definition eqsys_nonvar_size_hlp (s : eqsys) (xs : var_set) : nat :=
+  list_sum (map (eqsys_rhs_nonvar_size s) xs).
+
+Definition eqsys_nonvar_size (s : eqsys) : nat := eqsys_nonvar_size_hlp s (eqsys_dom s).
+
+Lemma eqsys_nonvar_size_extend x t s : eqsys_nonvar_size ((x, t) :: s) + eqsys_rhs_nonvar_size s x
+                                     = eqsys_nonvar_size s + term_nonvar_size t.
+Proof.
+  destruct (in_dec name_eq_dec x (eqsys_dom s)).
+  * transitivity (eqsys_nonvar_size_hlp ((x, t) :: s) (eqsys_dom s) + eqsys_rhs_nonvar_size s x). {
+      f_equal. apply Permutation_list_sum. apply Permutation_map.
+      apply NoDup_Permutation; try apply eqsys_dom_nodup. intro z. constructor; intro.
+      * apply ListSet.set_add_elim in H. destruct H; subst; auto.
+      * apply ListSet.set_add_intro1. auto.
+    }
+    transitivity (eqsys_nonvar_size_hlp ((x, t) :: s) (x :: var_set_remove x (eqsys_dom s)) + eqsys_rhs_nonvar_size s x). {
+      f_equal. apply Permutation_list_sum. apply Permutation_map.
+      apply NoDup_Permutation. apply eqsys_dom_nodup.
+      * constructor.
+        - intro. apply ListSet.set_remove_2 in H. contradiction. apply eqsys_dom_nodup.
+        - apply ListSet.set_remove_nodup. apply eqsys_dom_nodup.
+      * intro z. constructor; intro.
+        - destruct (name_eq_dec x z). left. auto. right. apply ListSet.set_remove_3; auto.
+        - destruct H. subst. auto. apply ListSet.set_remove_1 in H. auto.
+    }
+    transitivity (term_nonvar_size t + eqsys_nonvar_size_hlp ((x, t) :: s) (var_set_remove x (eqsys_dom s)) + eqsys_rhs_nonvar_size s x). {
+      f_equal. unfold eqsys_nonvar_size_hlp. simpl. f_equal. unfold eqsys_rhs_nonvar_size.
+      simpl. destruct (name_eq_dec x x). auto. contradiction.
+    }
+    transitivity (term_nonvar_size t + eqsys_nonvar_size_hlp s (var_set_remove x (eqsys_dom s)) + eqsys_rhs_nonvar_size s x). {
+      f_equal. f_equal. unfold eqsys_nonvar_size_hlp. f_equal. apply map_ext_in. intros z ?.
+      unfold eqsys_rhs_nonvar_size. simpl. destruct (name_eq_dec z x); auto.
+      exfalso. apply ListSet.set_remove_2 in H. auto. apply eqsys_dom_nodup.
+    }
+    rewrite (PeanoNat.Nat.add_comm (eqsys_nonvar_size s)), <- PeanoNat.Nat.add_assoc. f_equal.
+    transitivity (eqsys_nonvar_size_hlp s (x :: var_set_remove x (eqsys_dom s))). {
+      rewrite PeanoNat.Nat.add_comm. auto.
+    }
+    apply Permutation_list_sum. apply Permutation_map.
+    apply NoDup_Permutation. 2: apply eqsys_dom_nodup.
+    - constructor.
+      + intro. apply ListSet.set_remove_2 in H. auto. apply eqsys_dom_nodup.
+      + apply ListSet.set_remove_nodup. apply eqsys_dom_nodup.
+    - intro z. constructor; intro.
+      + destruct H. subst. auto. apply ListSet.set_remove_1 in H. auto.
+      + destruct (name_eq_dec x z). left. auto. right. apply ListSet.set_remove_3; auto.
+  * transitivity (eqsys_nonvar_size ((x, t) :: s)). {
+      unfold eqsys_rhs_nonvar_size. replace (eqsys_lookup s x) with (@None term). auto.
+      symmetry. apply in_eqsys_dom_inv. intro. apply eqsys_dom_spec in H. auto.
+    }
+    transitivity (eqsys_nonvar_size_hlp ((x, t) :: s) (x :: eqsys_dom s)). {
+      apply Permutation_list_sum. apply Permutation_map.
+      apply NoDup_Permutation. apply eqsys_dom_nodup.
+      * constructor. auto. apply eqsys_dom_nodup.
+      * intro z. constructor; intros.
+        - apply ListSet.set_add_elim in H. destruct H. left. auto. right. auto.
+        - destruct H. apply ListSet.set_add_intro2. auto. apply ListSet.set_add_intro1. auto.
+    }
+    transitivity (term_nonvar_size t + eqsys_nonvar_size_hlp ((x, t) :: s) (eqsys_dom s)). {
+      unfold eqsys_nonvar_size_hlp. simpl. f_equal. unfold eqsys_rhs_nonvar_size. simpl.
+      destruct (name_eq_dec x x). auto. contradiction.
+    }
+    rewrite PeanoNat.Nat.add_comm. f_equal. unfold eqsys_nonvar_size, eqsys_nonvar_size_hlp.
+    f_equal. apply map_ext_in. intros z ?. unfold eqsys_rhs_nonvar_size. simpl.
+    destruct (name_eq_dec z x). subst. contradiction. auto.
+Qed.
+
 Inductive eqsys_walk_result (s : eqsys) : name -> name * term -> Prop :=
 | ESWalkVar x : eqsys_lookup s x = None -> eqsys_walk_result s x (x, Var x)
 | ESWalkWalk x y r : eqsys_lookup s x = Some (Var y) -> eqsys_walk_result s y r -> eqsys_walk_result s x r
@@ -105,6 +296,13 @@ Proof.
   induction H; intros; auto; good_inversion Heqr. auto.
 Qed.
 
+Lemma eqsys_walk_result_last_nonvar s x y t (H1 : eqsys_walk_result s x (y, t)) (H2 : t <> Var y)
+                                  : eqsys_lookup s y = Some t.
+Proof.
+  remember (y, t) as r. revert y t H2 Heqr. induction H1; intros; good_inversion Heqr; eauto.
+  contradiction.
+Qed.
+
 Lemma eqsys_walk_result_var_dom s x y z (H : eqsys_walk_result s x (y, Var z)) : ~in_eqsys_dom s z.
 Proof.
   remember (y, Var z) as r. revert y z Heqr.
@@ -115,10 +313,7 @@ Qed.
 
 Lemma eqsys_walk_result_var_dom_inv s x y t (H1 : eqsys_walk_result s x (y, t)) (H2 : t <> Var y)
                                   : in_eqsys_dom s y.
-Proof.
-  remember (y, t) as r. revert y t H2 Heqr.
-  induction H1; intros; good_inversion Heqr; eauto; try contradiction; eexists; eauto.
-Qed.
+Proof. apply eqsys_walk_result_last_nonvar in H1; auto. eexists. eauto. Qed.
 
 Lemma eqsys_walk_result_last s x y z t (H : eqsys_walk_result s x (y, t))
                            : eqsys_lookup s y <> Some (Var z).
@@ -126,6 +321,18 @@ Proof.
   remember (y, t) as r. revert y t Heqr. induction H; intros; good_inversion Heqr; try rewrite H.
   all: try (intro; inversion H0; fail). eapply IHeqsys_walk_result. auto.
 Qed.
+
+Lemma eqsys_walk_result_in_vars s x y t (H : eqsys_walk_result s x (y, t))
+                              : In y (eqsys_vars s) \/ x = y.
+Proof.
+  remember (y, t) as r. revert y t Heqr. induction H; intros; good_inversion Heqr; auto.
+  edestruct IHeqsys_walk_result; auto. subst y0. left. eapply eqsys_vars_in_rhs.
+  apply eqsys_rhs_in. exists x. eauto. simpl. auto.
+Qed.
+
+Lemma eqsys_walk_result_root s x y t (H : eqsys_walk_result s x (y, t))
+                           : is_eqsys_root s y = true.
+Proof. apply is_eqsys_root_true. intro. eapply eqsys_walk_result_last. eauto. Qed.
 
 Fixpoint eqsys_walk_hlp (fuel : nat) (s : eqsys) (x : name) : name * term :=
 match fuel with
@@ -436,6 +643,10 @@ Proof. apply wf_eqsys_walk_ext. rewrite H. apply wf_eqsys_walk_prop. Qed.
 Lemma wf_eqsys_walk_var s x y z (H : wf_eqsys_walk s x = (y, Var z)) : y = z.
 Proof. eapply eqsys_walk_result_var. rewrite <- H. apply wf_eqsys_walk_prop. Qed.
 
+Lemma wf_eqsys_walk_last_nonvar s x y t (H1 : wf_eqsys_walk s x = (y, t)) (H2 : t <> Var y)
+                              : eqsys_lookup (wf_eqsys_get s) y = Some t.
+Proof. eapply eqsys_walk_result_last_nonvar; auto. rewrite <- H1. apply wf_eqsys_walk_prop. Qed.
+
 Lemma wf_eqsys_walk_var_dom s x y z (H : wf_eqsys_walk s x = (y, Var z))
                           : ~in_eqsys_dom (wf_eqsys_get s) z.
 Proof. eapply eqsys_walk_result_var_dom. rewrite <- H. apply wf_eqsys_walk_prop. Qed.
@@ -461,16 +672,24 @@ Proof.
   rewrite H2' in H1'. good_inversion H1'. auto.
 Qed.
 
-Lemma wf_eqsys_walk_rhs s x : In (snd (wf_eqsys_walk s x)) (eqsys_rhs (wf_eqsys_get s))
+Lemma wf_eqsys_walk_rhs s x : in_eqsys_rhs (wf_eqsys_get s) (snd (wf_eqsys_walk s x))
                            \/ exists y, wf_eqsys_walk s x = (y, Var y).
 Proof.
   specialize (wf_eqsys_walk_prop s x). intro H. remember (wf_eqsys_walk s x) as r.
   induction H; simpl.
   * right. eexists. auto.
   * apply IHeqsys_walk_result. symmetry. eapply wf_eqsys_walk_ext. eauto.
-  * left. apply eqsys_rhs_in. eexists. eauto.
-  * left. apply eqsys_rhs_in. eexists. eauto.
+  * left. eexists. eauto.
+  * left. eexists. eauto.
 Qed.
+
+Lemma wf_eqsys_walk_root s x y t (H : wf_eqsys_walk s x = (y, t))
+                       : is_eqsys_root (wf_eqsys_get s) y = true.
+Proof. eapply eqsys_walk_result_root. rewrite <- H. apply wf_eqsys_walk_prop. Qed.
+
+Lemma wf_eqsys_walk_in_vars s x y t (H : wf_eqsys_walk s x = (y, t))
+                       : In y (eqsys_vars (wf_eqsys_get s)) \/ x = y.
+Proof. eapply eqsys_walk_result_in_vars. rewrite <- H. apply wf_eqsys_walk_prop. Qed.
 
 Lemma wf_eqsys_walk_extend s1 s2 x y t (H2 : wf_eqsys_get s2 = (x, t) :: wf_eqsys_get s1)
                          : wf_eqsys_walk s1 y = wf_eqsys_walk s2 y
@@ -567,8 +786,8 @@ Proof.
       exists r. constructor. auto. destruct IH2; auto. right. apply eqsys_rhs_subterms.
       exists (Con n0 t'1 t'2). constructor. specialize (wf_eqsys_walk_rhs s n). intro.
       destruct H1. 2: { destruct H1 as [ n' H1 ]. rewrite H1 in Heqres. inversion Heqres. }
-      rewrite <- Heqres in H1. auto. eapply in_incl_trans. eauto. apply term_subterms_incl.
-      simpl. right. apply in_or_app. left. apply term_subterms_self.
+      apply eqsys_rhs_in in H1. rewrite <- Heqres in H1. auto. eapply in_incl_trans. eauto.
+      apply term_subterms_incl. simpl. right. apply in_or_app. left. apply term_subterms_self.
     - edestruct IHinf_path_to as [ r [ IH1 IH2 ] ]. reflexivity. exists r. constructor. auto.
       destruct IH2; auto. left. simpl. right. apply in_or_app. auto.
   * destruct t'; rewrite inf_term_step_prop in Heqt'; good_inversion Heqt'.
@@ -577,8 +796,8 @@ Proof.
       exists r. constructor. auto. destruct IH2; auto. right. apply eqsys_rhs_subterms.
       exists (Con n0 t'1 t'2). constructor. specialize (wf_eqsys_walk_rhs s n). intro.
       destruct H1. 2: { destruct H1 as [ n' H1 ]. rewrite H1 in Heqres. inversion Heqres. }
-      rewrite <- Heqres in H1. auto. eapply in_incl_trans. eauto. apply term_subterms_incl.
-      simpl. right. apply in_or_app. right. apply term_subterms_self.
+      apply eqsys_rhs_in in H1. rewrite <- Heqres in H1. auto. eapply in_incl_trans. eauto.
+      apply term_subterms_incl. simpl. right. apply in_or_app. right. apply term_subterms_self.
     - edestruct IHinf_path_to as [ r [ IH1 IH2 ] ]. reflexivity. exists r. constructor. auto.
       destruct IH2; auto. left. simpl. right. apply in_or_app. auto.
 Qed.
@@ -723,7 +942,7 @@ Proof.
   destruct H as [ r [ H1 H2 ] ]. destruct H2.
   * destruct H. 2: inversion H. subst. destruct (wf_eqsys_walk_rhs s x).
     - apply Exists_cons_tl. apply Exists_map. apply Exists_flat_map. apply Exists_exists.
-      exists (snd (wf_eqsys_walk s x)). constructor. auto. apply Exists_exists.
+      exists (snd (wf_eqsys_walk s x)). constructor. apply eqsys_rhs_in. auto. apply Exists_exists.
       exists (snd (wf_eqsys_walk s x)). constructor. apply term_subterms_self.
       etransitivity. eauto. apply wf_eqsys_image_walk.
     - destruct H as [ y H ]. rewrite H. simpl. apply Exists_cons_hd. etransitivity. eauto.
@@ -1090,6 +1309,49 @@ Proof. induction t; constructor; auto. Qed.
 Lemma is_common_part_sym t1 t2 t (H : is_common_part t1 t2 t) : is_common_part t2 t1 t.
 Proof. induction H; constructor; auto. Qed.
 
+Lemma is_common_part_vars t1 t2 t x (H1 : is_common_part t1 t2 t) (H2 : In x (fv_term t))
+                        : In x (fv_term t1) \/ (In x (fv_term t2)).
+Proof.
+  induction H1; auto. simpl in H2. apply ListSet.set_union_elim in H2. destruct H2.
+  * apply IHis_common_part1 in H. destruct H; [ left | right ]; apply ListSet.set_union_intro1; auto.
+  * apply IHis_common_part2 in H. destruct H; [ left | right ]; apply ListSet.set_union_intro2; auto.
+Qed.
+
+Lemma is_common_part_nonvar_size t1 t2 t (H1 : is_common_part t1 t2 t)
+                               : term_nonvar_size t <= term_nonvar_size t1.
+Proof. induction H1; simpl; try lia. Qed.
+
+Lemma is_common_part_same_nonvar_size_con l1 l2 l r1 r2 r
+                                          (H1 : is_common_part l1 l2 l) (H2 : is_common_part r1 r2 r)
+                                          (H3 : term_nonvar_size l1 + term_nonvar_size r1
+                                              = term_nonvar_size l + term_nonvar_size r)
+                                        : term_nonvar_size l1 = term_nonvar_size l
+                                       /\ term_nonvar_size r1 = term_nonvar_size r.
+Proof.
+  revert r1 r2 r H2 H3. induction H1; simpl; intros.
+  * constructor; auto.
+  * destruct (PeanoNat.Nat.eq_dec (term_nonvar_size t) 0). constructor; lia.
+    absurd (term_nonvar_size r > term_nonvar_size r1).
+    - intro. apply is_common_part_nonvar_size in H2. lia.
+    - lia.
+  * constructor; lia.
+  * good_inversion H3. specialize IHis_common_part1 with (r1 := Con f r1 r0) (r := Con f r r4).
+    edestruct IHis_common_part1 as [ IH1 IH2 ]. constructor; eauto. simpl. lia. simpl in IH2.
+    specialize IHis_common_part2 with (r1 := Con f l1 r0) (r := Con f l r4).
+    edestruct IHis_common_part2 as [ IH3 IH4 ]. constructor; eauto. simpl. lia. simpl in IH4.
+    constructor; lia.
+Qed.
+
+Lemma is_common_part_nonvar_size_inv t1 t2 t (H1 : is_common_part t1 t2 t)
+                                     (H2 : term_nonvar_size t1 = term_nonvar_size t)
+                                   : is_common_part t1 t2 t1.
+Proof.
+  induction H1; try constructor; simpl in H2.
+  * destruct t; good_inversion H2. constructor.
+  * apply IHis_common_part1. eapply is_common_part_same_nonvar_size_con; eauto. lia.
+  * apply IHis_common_part2. eapply is_common_part_same_nonvar_size_con. apply H1_. eauto. lia.
+Qed.
+
 Lemma is_common_part_inf_unifiable s t1 t2 t (H1 : is_common_part t1 t2 t)
                                    (H2 : inf_unifier (term_to_inf t1) (term_to_inf t2) s)
                                  : inf_unifier (term_to_inf t1) (term_to_inf t) s.
@@ -1183,7 +1445,17 @@ Definition wf_eqsys_union_spec (s : wf_eqsys) (x y : name)
                                (res : wf_eqsys * option (term * term)) : Prop :=
 match res with
 | (s', None) =>
-  inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s')
+  (
+    inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s')
+  ) /\ (
+    forall xs, NoDup xs -> In x xs -> In y xs -> incl (eqsys_vars (wf_eqsys_get s)) xs
+            -> eqsys_roots_num (wf_eqsys_get s') xs <= eqsys_roots_num (wf_eqsys_get s) xs
+  ) /\ (
+    eqsys_nonvar_size (wf_eqsys_get s') <= eqsys_nonvar_size (wf_eqsys_get s)
+  ) /\ (
+    forall z, In z (eqsys_vars (wf_eqsys_get s')) -> In z (eqsys_vars (wf_eqsys_get s))
+                                                  \/ z = x \/ z = y
+  )
 | (s', Some (t1, t2)) =>
   (
     forall s'', inf_min_unifying_extension (term_to_inf t1) (term_to_inf t2) (wf_eqsys_to_subst s') s''
@@ -1191,17 +1463,24 @@ match res with
   ) /\ (
     forall s'', inf_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) s''
              -> inf_unifying_extension (term_to_inf t1) (term_to_inf t2) (wf_eqsys_to_subst s') s''
+  ) /\ (
+    forall xs, NoDup xs -> incl (eqsys_dom (wf_eqsys_get s)) xs
+            -> eqsys_roots_num (wf_eqsys_get s) xs = 1 + eqsys_roots_num (wf_eqsys_get s') xs
+  ) /\ (
+    incl (eqsys_vars (wf_eqsys_get s')) (eqsys_vars (wf_eqsys_get s))
+ /\ in_eqsys_rhs (wf_eqsys_get s) t1 /\ in_eqsys_rhs (wf_eqsys_get s) t2
   )
 end.
 
 (*
 Тут есть варианты:
-1. Когда с одной стороны свободная переменная, можно цеплять её за Var другой переменной,
-   что будет сразу же помещать их в одну компоненту связности — это даст такую же систему
-   с точностью до walk
+1. Когда с одной стороны свободная переменная, можно цеплять её за терм другой переменной —
+   это даст такую же систему с точностью до walk, но увеличит размер системы,
+   что значительно усложняет доказательство терминируемости
 2. Когда с обеих сторон связанные переменные, можно вычислять common part
    и связывать объединённые переменные с ним — это должно быть эквивалентно
-   с точки зрения спецификации union
+   с точки зрения спецификации union и позволяет ускорять алгоритм за счёт
+   раннего обнаружения ошибок и упрощения системы, но на терминируемость глобально не влияет
 *)
 
 Definition eqsys_union (s : wf_eqsys) (x y : name) : eqsys * option (term * term) :=
@@ -1210,11 +1489,19 @@ Definition eqsys_union (s : wf_eqsys) (x y : name) : eqsys * option (term * term
   let s := wf_eqsys_get s in
 
   if name_eq_dec x y then (s, None)
-  else match xt, yt with
-  | Var _, _ => ((x, yt) :: s, None)
-  | _, Var _ => ((y, xt) :: s, None)
-  | _, _ => ((x, Var y) :: s, Some (xt, yt))
-  end.
+  else
+    let res := match xt, yt with
+    | Var _, _ => None
+    | _, Var _ => None
+    | _, _ => Some (xt, yt)
+    end in
+
+    let (x, y) := match yt with
+    | Var _ => (y, x)
+    | _ => (x, y)
+    end in
+
+    ((x, Var y) :: s, res).
 
 Lemma eqsys_union_well_formed s s' x y res (H : eqsys_union s x y = (s', res))
                             : eqsys_well_formed s'.
@@ -1223,22 +1510,19 @@ Proof.
   remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' xt ].
   remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' yt ].
   destruct (name_eq_dec x' y'). good_inversion H. apply wf_eqsys_get_well_formed.
-  assert (eqsys_walkable ((x', Var y') :: wf_eqsys_get s) x'). {
+  assert (H1 : eqsys_walkable ((y', Var x') :: wf_eqsys_get s) y'). {
+    apply eqsys_walkable_extend_var. apply eqsys_walkable_path.
+    exists [x']. apply eqsys_walk_path_extend_same.
+    * intro. destruct H0; good_inversion H0. contradiction.
+    * eapply eqsys_walk_path_result_fst. erewrite <- Heqres1. apply wf_eqsys_walk_prop.
+  }
+  assert (H2 : eqsys_walkable ((x', Var y') :: wf_eqsys_get s) x'). {
     apply eqsys_walkable_extend_var. apply eqsys_walkable_path.
     exists [y']. apply eqsys_walk_path_extend_same.
     * intro. destruct H0; good_inversion H0. contradiction.
     * eapply eqsys_walk_path_result_fst. erewrite <- Heqres2. apply wf_eqsys_walk_prop.
   }
-  destruct xt; destruct yt; good_inversion H; apply wf_eqsys_extend_well_formed; try apply H0.
-  * set (H' := Heqres2). apply wf_eqsys_walk_var in H'. subst n1. apply H0.
-  * apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCst. simpl.
-    destruct (name_eq_dec x' x'). auto. contradiction.
-  * apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCon. simpl.
-    destruct (name_eq_dec x' x'). auto. contradiction.
-  * apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCst. simpl.
-    destruct (name_eq_dec y' y'). auto. contradiction.
-  * apply wf_eqsys_extend_well_formed. eexists. eapply ESWalkCon. simpl.
-    destruct (name_eq_dec y' y'). auto. contradiction.
+  destruct yt; good_inversion H; apply wf_eqsys_extend_well_formed; auto.
 Qed.
 
 Lemma wf_eqsys_union_aux s x y : { res | match res with
@@ -1271,8 +1555,8 @@ Proof.
   replace xt with yt. reflexivity. eapply wf_eqsys_walk_fst_inj; eauto.
 Qed.
 
-Lemma wf_eqsys_union_unbound_prop s s' x y x' y' t
-  (H : wf_eqsys_get s' = (x', t) :: wf_eqsys_get s) (H1 : x' <> y')
+Lemma wf_eqsys_union_unbound_prop1 s s' x y x' y' t
+  (H : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s) (H1 : x' <> y')
   (H2 : wf_eqsys_walk s x = (x', Var x')) (H3 : wf_eqsys_walk s y = (y', t))
 : inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s').
 Proof.
@@ -1284,32 +1568,69 @@ Proof.
   apply inf_min_unifying_extension_unbound.
   * etransitivity. eapply wf_eqsys_to_subst_extend_unbound; eauto.
     apply inf_subst_compose_eq; try reflexivity.
-    rewrite inf_subst_apply_var, wf_eqsys_to_subst_image. apply inf_subst_eq_ext. intro z.
+    rewrite inf_subst_apply_var, wf_eqsys_to_subst_image.
+    apply inf_subst_eq_ext. intro z.
     destruct (name_eq_dec z x'). 2: repeat rewrite inf_image_singleton_other; auto; reflexivity.
     subst z. repeat rewrite inf_image_singleton_same, wf_eqsys_image_walk.
-    replace (snd (wf_eqsys_walk s' y)) with (snd (wf_eqsys_walk s' x')). reflexivity.
-    assert (wf_eqsys_walk s' y = wf_eqsys_walk s y). {
-      edestruct wf_eqsys_walk_extend as [ | [] ]; eauto.
-      rewrite H4 in H3. erewrite wf_eqsys_walk_ext in H3. 2: {
-        apply ESWalkVar. apply in_eqsys_dom_inv. auto.
-      }
-      good_inversion H3. contradiction.
+    replace (wf_eqsys_walk s' y) with (wf_eqsys_walk s' x'). reflexivity.
+    transitivity (wf_eqsys_walk s' y'). {
+      apply wf_eqsys_walk_ext. eapply ESWalkWalk. rewrite H. simpl.
+      destruct (name_eq_dec x' x'). auto. contradiction. apply wf_eqsys_walk_prop.
     }
-    rewrite H4, H3. edestruct wf_eqsys_walk_extend_new; eauto. rewrite H5. auto.
-    destruct H5. subst. set (H' := H3). apply wf_eqsys_walk_var in H'. subst x0.
-    f_equal. apply wf_eqsys_walk_ext.
-    eapply ESWalkWalk. rewrite H. simpl. destruct (name_eq_dec x' x'). auto. contradiction.
-    apply ESWalkVar. apply in_eqsys_dom_inv. eapply wf_eqsys_walk_var_dom. rewrite H4. eauto.
+    assert (wf_eqsys_walk s x = wf_eqsys_walk s x'). rewrite wf_eqsys_walk_idemp, H2. auto.
+    assert (wf_eqsys_walk s y = wf_eqsys_walk s y'). rewrite wf_eqsys_walk_idemp, H3. auto.
+    transitivity (wf_eqsys_walk s y'). {
+      edestruct wf_eqsys_walk_extend as [ | [] ]; eauto.
+      rewrite H4, <- H6, <- H5, H3 in H2. good_inversion H2. contradiction.
+    }
+    rewrite <- H5.
+    edestruct wf_eqsys_walk_extend as [ | [] ]; eauto.
+    rewrite H6, <- H4, H2 in H3. good_inversion H3. contradiction.
   * intro. apply wf_eqsys_to_subst_dom in H4. auto.
   * rewrite inf_subst_apply_var, wf_eqsys_to_subst_image.
     rewrite inf_term_step_prop at 1. simpl. rewrite H3. intro.
     destruct t; good_inversion H4. apply wf_eqsys_walk_var in H3. auto.
 Qed.
 
+Lemma wf_eqsys_union_unbound_prop2 s s' x y x' y' t xs
+  (H1 : NoDup xs) (H2 : In x xs) (H3 : incl (eqsys_vars (wf_eqsys_get s)) xs)
+  (H4 : wf_eqsys_walk s x = (x', Var x')) (H5 : wf_eqsys_walk s y = (y', t))
+  (H6 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
+: eqsys_roots_num (wf_eqsys_get s') xs <= eqsys_roots_num (wf_eqsys_get s) xs.
+Proof.
+  assert (In x' xs). apply wf_eqsys_walk_in_vars in H4. destruct H4; subst; auto.
+  assert (is_eqsys_root (wf_eqsys_get s) x' = true). apply wf_eqsys_walk_root in H4. auto.
+  erewrite (eqsys_roots_num_extend_var (wf_eqsys_get s) _ x' y'); eauto. rewrite H6. lia.
+Qed.
+
+Lemma wf_eqsys_union_unbound_prop3 s s' x y x' y' t
+  (H1 : wf_eqsys_walk s x = (x', Var x')) (H2 : wf_eqsys_walk s y = (y', t))
+  (H3 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
+: eqsys_nonvar_size (wf_eqsys_get s') <= eqsys_nonvar_size (wf_eqsys_get s).
+Proof.
+  rewrite H3. specialize (eqsys_nonvar_size_extend x' (Var y') (wf_eqsys_get s)).
+  intro. simpl in H. lia.
+Qed.
+
+Lemma wf_eqsys_union_unbound_prop4 s s' x y x' y' t z
+  (H1 : wf_eqsys_walk s x = (x', Var x')) (H2 : wf_eqsys_walk s y = (y', t))
+  (H3 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
+  (H4 : In z (eqsys_vars (wf_eqsys_get s')))
+: In z (eqsys_vars (wf_eqsys_get s)) \/ z = x \/ z = y.
+Proof.
+  apply eqsys_vars_in in H4. destruct H4.
+  * apply eqsys_dom_spec in H. rewrite H3 in H. simpl in H.
+    apply ListSet.set_add_elim in H. destruct H.
+    - subst z. apply wf_eqsys_walk_in_vars in H1. destruct H1; auto.
+    - left. apply eqsys_vars_in_dom. apply eqsys_dom_spec. auto.
+  * destruct H as [ t' [] ]. rewrite H3 in H. destruct H.
+    - subst. destruct H0; good_inversion H. apply wf_eqsys_walk_in_vars in H2. destruct H2; auto.
+    - left. eapply eqsys_vars_in_rhs; eauto.
+Qed.
+
 Lemma wf_eqsys_union_bound_prop1 m m' s x y x' y' t1 t2
   (H1 : x' <> y') (H2 : t1 <> Var x')
-  (H3 : wf_eqsys_walk m x = (x', t1))
-  (H4 : wf_eqsys_walk m y = (y', t2))
+  (H3 : wf_eqsys_walk m x = (x', t1)) (H4 : wf_eqsys_walk m y = (y', t2))
   (H5 : wf_eqsys_get m' = (x', Var y') :: wf_eqsys_get m)
   (H6 : inf_min_unifying_extension (term_to_inf t1) (term_to_inf t2) (wf_eqsys_to_subst m') s)
 : inf_min_unifying_extension (InfVar x) (InfVar y) (wf_eqsys_to_subst m) s.
@@ -1398,6 +1719,40 @@ Proof.
   rewrite H1. reflexivity. rewrite H2. reflexivity.
 Qed.
 
+Lemma wf_eqsys_union_bound_prop3 s s' x x' y' t xs
+  (H1 : NoDup xs) (H2 : incl (eqsys_dom (wf_eqsys_get s)) xs) (H3 : t <> Var x')
+  (H4 : wf_eqsys_walk s x = (x', t)) (H5 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
+: eqsys_roots_num (wf_eqsys_get s) xs = 1 + eqsys_roots_num (wf_eqsys_get s') xs.
+Proof.
+  rewrite H5. apply eqsys_roots_num_extend_var. auto.
+  * destruct t. apply wf_eqsys_walk_var in H4. subst n. contradiction.
+    all: apply H2; apply eqsys_dom_spec; eapply wf_eqsys_walk_var_dom_inv; eauto.
+  * apply wf_eqsys_walk_root in H4. auto.
+Qed.
+
+Lemma wf_eqsys_union_bound_prop4 s s' x x' y y' t1 t2
+    (H1 : wf_eqsys_walk s x = (x', t1)) (H2 : wf_eqsys_walk s y = (y', t2))
+    (H3 : t1 <> Var x') (H4 : t2 <> Var y') (H5 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
+  : incl (eqsys_vars (wf_eqsys_get s')) (eqsys_vars (wf_eqsys_get s))
+ /\ in_eqsys_rhs (wf_eqsys_get s) t1 /\ in_eqsys_rhs (wf_eqsys_get s) t2.
+Proof.
+  constructor.
+  * intros z ?. apply eqsys_vars_in in H. destruct H.
+    - destruct H as [ t' ]. rewrite H5 in H. simpl in H. apply eqsys_vars_in_dom.
+      destruct (name_eq_dec z x').
+      + subst z. good_inversion H. apply wf_eqsys_walk_var_dom_inv in H1; auto.
+      + eexists. eauto.
+    - destruct H as [ t' [] ]. rewrite H5 in H. simpl in H. destruct H.
+      + subst. destruct H0. 2: contradiction. subst z. apply eqsys_vars_in_dom.
+        apply wf_eqsys_walk_var_dom_inv in H2; auto.
+      + eapply eqsys_vars_in_rhs; eauto.
+  * constructor.
+    - edestruct wf_eqsys_walk_rhs. rewrite H1 in H. auto. destruct H. rewrite H in H1.
+      good_inversion H1. contradiction.
+    - edestruct wf_eqsys_walk_rhs. rewrite H2 in H. auto. destruct H. rewrite H in H2.
+      good_inversion H2. contradiction.
+Qed.
+
 Lemma wf_eqsys_union_prop s x y : wf_eqsys_union_spec s x y (wf_eqsys_union s x y).
 Proof.
   remember (wf_eqsys_union s x y) as res. symmetry in Heqres.
@@ -1405,17 +1760,27 @@ Proof.
   remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' tx ].
   remember (wf_eqsys_walk s y) as res2. symmetry in Heqres2. destruct res2 as [ y' ty ].
   destruct (name_eq_dec x' y').
-  * good_inversion Heqres. eapply wf_eqsys_union_same_prop; eauto.
-  * destruct tx.
-    set (H' := Heqres1). apply wf_eqsys_walk_var in H'. subst n0.
-    good_inversion Heqres. eapply wf_eqsys_union_unbound_prop; eauto.
-    all: destruct ty; good_inversion Heqres.
-    1, 4: apply inf_min_unifying_extension_sym.
-    1, 2: set (H' := Heqres2); apply wf_eqsys_walk_var in H'; subst n1.
-    1, 2: eapply wf_eqsys_union_unbound_prop; [ | symmetry | .. ]; eauto.
+  * good_inversion Heqres. constructor. eapply wf_eqsys_union_same_prop; eauto.
+    constructor; try constructor; intros; rewrite H0; auto.
+  * symmetry in Heqres. destruct ty; good_inversion Heqres.
+    replace (match tx with | Var _ | _ => None end) with (@None (term * term)) by (destruct tx; auto).
+    set (H' := Heqres2). apply wf_eqsys_walk_var in H'. subst n0.
+    constructor. apply inf_min_unifying_extension_sym. eapply wf_eqsys_union_unbound_prop1; eauto.
+    constructor. intros. eapply wf_eqsys_union_unbound_prop2; try apply H0; eauto.
+    constructor; intros. eapply wf_eqsys_union_unbound_prop3; try apply H0; eauto.
+    eapply wf_eqsys_union_unbound_prop4 in H0. 2: apply Heqres2. 2, 3: eauto.
+    destruct H0 as [ | [ | ] ]; auto.
+    all: destruct tx.
+    1, 4: set (H' := Heqres1); apply wf_eqsys_walk_var in H'; subst n1.
+    1, 2: constructor; try eapply wf_eqsys_union_unbound_prop1; eauto.
+    1, 2: constructor; intros; try eapply wf_eqsys_union_unbound_prop2; try apply H1; eauto.
+    1, 2: constructor; intros; try eapply wf_eqsys_union_unbound_prop3; eauto.
+    1, 2: eapply wf_eqsys_union_unbound_prop4; eauto.
     all: constructor; intros; try eapply wf_eqsys_union_bound_prop1; eauto.
-    all: try eapply wf_eqsys_union_bound_prop2; eauto.
-    all: intros ?; inversion H1.
+    all: try (constructor; intros; try eapply wf_eqsys_union_bound_prop2; eauto).
+    all: try (constructor; intros; try eapply wf_eqsys_union_bound_prop3; try apply H0; eauto).
+    all: try eapply wf_eqsys_union_bound_prop4; eauto.
+    all: intros ?; try inversion H1; try inversion H2; try inversion H.
 Qed.
 
 Corollary wf_eqsys_union_prop' s x y res (H : wf_eqsys_union s x y = res)
@@ -1429,7 +1794,17 @@ match res with
   forall s', inf_subst_more_general (wf_eqsys_to_subst s) s'
           -> ~inf_unifier (InfVar x) (term_to_inf yt) s'
 | Some (s', None) =>
-  inf_min_unifying_extension (InfVar x) (term_to_inf yt) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s')
+  (
+    inf_min_unifying_extension (InfVar x) (term_to_inf yt) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s')
+  ) /\ (
+    forall xs, NoDup xs -> In x xs -> incl (eqsys_vars (wf_eqsys_get s)) xs
+            -> eqsys_roots_num (wf_eqsys_get s') xs = eqsys_roots_num (wf_eqsys_get s) xs
+  ) /\ (
+    eqsys_nonvar_size (wf_eqsys_get s') = eqsys_nonvar_size (wf_eqsys_get s) + term_nonvar_size yt
+  ) /\ (
+    forall z, In z (eqsys_vars (wf_eqsys_get s')) -> In z (eqsys_vars (wf_eqsys_get s))
+                                                  \/ z = x \/ In z (fv_term yt)
+  )
 | Some (s', Some xt) =>
   (
     forall s'', inf_min_unifying_extension (term_to_inf xt) (term_to_inf yt) (wf_eqsys_to_subst s') s''
@@ -1437,6 +1812,19 @@ match res with
   ) /\ (
     forall s'', inf_unifying_extension (InfVar x) (term_to_inf yt) (wf_eqsys_to_subst s) s''
              -> inf_unifying_extension (term_to_inf xt) (term_to_inf yt) (wf_eqsys_to_subst s') s''
+  ) /\ (
+    forall xs, NoDup xs -> In x xs -> incl (eqsys_vars (wf_eqsys_get s)) xs
+            -> eqsys_roots_num (wf_eqsys_get s') xs = eqsys_roots_num (wf_eqsys_get s) xs
+  ) /\ (
+    exists t, is_common_part xt yt t /\ eqsys_nonvar_size (wf_eqsys_get s') + term_nonvar_size xt
+                                      = eqsys_nonvar_size (wf_eqsys_get s) + term_nonvar_size t
+  ) /\ (
+    forall z, In z (eqsys_vars (wf_eqsys_get s')) -> In z (eqsys_vars (wf_eqsys_get s))
+                                                  \/ In z (fv_term yt)
+  ) /\ (
+    in_eqsys_rhs (wf_eqsys_get s) xt
+  ) /\ (
+    forall x, xt <> Var x
   )
 end.
 
@@ -1503,8 +1891,8 @@ Proof.
   destruct (rational_unify_vt_aux s x yt H) as [ [ [ s1 xt1 ] | ] H2 ]; good_inversion H1. auto.
 Qed.
 
-Lemma rational_unify_vt_unbound_prop s s' x x' yt (H1 : wf_eqsys_walk s x = (x', Var x'))
-                                     (H2 : wf_eqsys_get s' = (x', yt) :: wf_eqsys_get s)
+Lemma rational_unify_vt_unbound_prop1 s s' x x' yt (H1 : wf_eqsys_walk s x = (x', Var x'))
+                                      (H2 : wf_eqsys_get s' = (x', yt) :: wf_eqsys_get s)
   : inf_min_unifying_extension (InfVar x) (term_to_inf yt) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s').
 Proof.
   assert (~in_eqsys_dom (wf_eqsys_get s) x'). apply wf_eqsys_walk_var_dom in H1. auto.
@@ -1562,6 +1950,44 @@ Proof.
       }
       destruct H7 as [ q1' ]. subst. rename q1' into q1. apply eqsys_walk_path_nodup in H6.
       good_inversion H6. apply H10. apply in_app_iff. right. right. left. auto.
+Qed.
+
+Lemma rational_unify_vt_unbound_prop2 s s' x x' yt xs (H1 : forall y, yt <> Var y)
+                                      (H2 : wf_eqsys_walk s x = (x', Var x'))
+                                      (H3 : wf_eqsys_get s' = (x', yt) :: wf_eqsys_get s)
+                                      (H4 : NoDup xs) (H5 : In x xs)
+                                      (H6 : incl (eqsys_vars (wf_eqsys_get s)) xs)
+                                    : eqsys_roots_num (wf_eqsys_get s') xs
+                                    = eqsys_roots_num (wf_eqsys_get s) xs.
+Proof.
+  rewrite H3. symmetry. apply eqsys_roots_num_extend_nonvar; auto.
+  * apply wf_eqsys_walk_in_vars in H2. destruct H2; subst; auto.
+  * apply wf_eqsys_walk_root in H2. auto.
+Qed.
+
+Lemma rational_unify_vt_unbound_prop3 s s' x x' yt (H1 : wf_eqsys_walk s x = (x', Var x'))
+                                      (H2 : wf_eqsys_get s' = (x', yt) :: wf_eqsys_get s)
+                                    : eqsys_nonvar_size (wf_eqsys_get s')
+                                    = eqsys_nonvar_size (wf_eqsys_get s) + term_nonvar_size yt.
+Proof.
+  transitivity (eqsys_nonvar_size (wf_eqsys_get s') + eqsys_rhs_nonvar_size (wf_eqsys_get s) x').
+  2: rewrite H2; apply eqsys_nonvar_size_extend. unfold eqsys_rhs_nonvar_size.
+  apply wf_eqsys_walk_var_dom, in_eqsys_dom_inv in H1. rewrite H1. lia.
+Qed.
+
+Lemma rational_unify_vt_unbound_prop4 s s' x x' yt z (H1 : wf_eqsys_walk s x = (x', Var x'))
+                                      (H2 : wf_eqsys_get s' = (x', yt) :: wf_eqsys_get s)
+                                      (H3 : In z (eqsys_vars (wf_eqsys_get s')))
+                                    : In z (eqsys_vars (wf_eqsys_get s))
+                                   \/ z = x \/ In z (fv_term yt).
+Proof.
+  apply eqsys_vars_in in H3. destruct H3.
+  * apply eqsys_dom_spec in H. rewrite H2 in H. simpl in H.
+    apply ListSet.set_add_elim in H. destruct H.
+    - subst z. apply wf_eqsys_walk_in_vars in H1. destruct H1; auto.
+    - left. apply eqsys_vars_in_dom. apply eqsys_dom_spec. auto.
+  * destruct H as [ t [] ]. rewrite H2 in H. destruct H. subst. auto.
+    left. eapply eqsys_vars_in_rhs; eauto.
 Qed.
 
 Lemma rational_unify_vt_bound_prop1 s1 s2 s3 x x' xt yt t
@@ -1627,6 +2053,57 @@ Proof.
   rewrite wf_eqsys_image_walk, H1. reflexivity.
 Qed.
 
+Lemma rational_unify_vt_bound_prop3 s1 s2 x x' xt yt t xs
+  (H1 : wf_eqsys_walk s1 x = (x', xt)) (H2 : is_common_part xt yt t)
+  (H3 : forall x, xt <> Var x) (H4 : forall y, yt <> Var y)
+  (H5 : wf_eqsys_get s2 = (x', t) :: wf_eqsys_get s1)
+  (H6 : NoDup xs) (H7 : In x xs) (H8 : incl (eqsys_vars (wf_eqsys_get s1)) xs)
+: eqsys_roots_num (wf_eqsys_get s2) xs = eqsys_roots_num (wf_eqsys_get s1) xs.
+Proof.
+  rewrite H5. symmetry. apply eqsys_roots_num_extend_nonvar; auto.
+  * apply wf_eqsys_walk_in_vars in H1. destruct H1. apply H8. auto. subst. auto.
+  * apply wf_eqsys_walk_root in H1. auto.
+  * good_inversion H2. exfalso. eapply H3. auto. exfalso. eapply H4. auto.
+    intros ? ?. inversion H. intros ? ?. inversion H2.
+Qed.
+
+Lemma rational_unify_vt_bound_prop4 s1 s2 x x' xt yt t
+    (H1 : wf_eqsys_walk s1 x = (x', xt)) (H2 : xt <> Var x')
+    (H3 : is_common_part xt yt t) (H4 : wf_eqsys_get s2 = (x', t) :: wf_eqsys_get s1)
+  : exists t, is_common_part xt yt t /\ eqsys_nonvar_size (wf_eqsys_get s2) + term_nonvar_size xt
+                                      = eqsys_nonvar_size (wf_eqsys_get s1) + term_nonvar_size t.
+Proof.
+  exists t. constructor. auto. etransitivity. 2: apply eqsys_nonvar_size_extend. rewrite <- H4.
+  f_equal. unfold eqsys_rhs_nonvar_size. apply wf_eqsys_walk_last_nonvar in H1; auto. rewrite H1. auto.
+Qed.
+
+Lemma rational_unify_vt_bound_prop5 s1 s2 x x' xt yt t z
+    (H1 : wf_eqsys_walk s1 x = (x', xt)) (H2 : xt <> Var x')
+    (H3 : is_common_part xt yt t) (H4 : In z (eqsys_vars (wf_eqsys_get s2)))
+    (H5 : wf_eqsys_get s2 = (x', t) :: wf_eqsys_get s1)
+  : In z (eqsys_vars (wf_eqsys_get s1)) \/ In z (fv_term yt).
+Proof.
+  apply eqsys_vars_in in H4. destruct H4.
+  * destruct H as [ t' ? ]. rewrite H5 in H. simpl in H. left.
+    apply eqsys_vars_in_dom. destruct (name_eq_dec z x').
+    - apply wf_eqsys_walk_last_nonvar in H1; auto. eexists. subst. eauto.
+    - eexists. eauto.
+  * destruct H as [ t' [] ]. rewrite H5 in H. simpl in H. destruct H. subst t'.
+    eapply is_common_part_vars in H3; eauto. clear H0. destruct H3; auto.
+    - left. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in.
+      edestruct wf_eqsys_walk_rhs. rewrite H1 in H0. auto.
+      destruct H0 as [ z' ]. rewrite H0 in H1. good_inversion H1. contradiction.
+    - left. eapply eqsys_vars_in_rhs; eauto.
+Qed.
+
+Lemma rational_unify_vt_bound_prop6 s x x' xt
+    (H1 : wf_eqsys_walk s x = (x', xt)) (H2 : xt <> Var x')
+  : in_eqsys_rhs (wf_eqsys_get s) xt.
+Proof.
+  edestruct wf_eqsys_walk_rhs. rewrite H1 in H. auto.
+  destruct H. rewrite H in H1. good_inversion H1. contradiction.
+Qed.
+
 Lemma rational_unify_vt_fail_prop m s x x' xt yt (H1 : wf_eqsys_walk m x = (x', xt))
                                   (H2 : ~exists t, is_common_part xt yt t)
                                   (H3 : inf_subst_more_general (wf_eqsys_to_subst m) s)
@@ -1641,26 +2118,39 @@ Qed.
 
 Lemma rational_unify_vt_prop s x yt H : rational_unify_vt_spec s x yt (rational_unify_vt s x yt H).
 Proof.
-  remember (rational_unify_vt s x yt H) as res. symmetry in Heqres. destruct res as [ [ s' xt ] | ].
+  remember (rational_unify_vt s x yt H) as res. symmetry in Heqres. destruct res as [ [ s' xt' ] | ].
   * apply rational_unify_vt_some in Heqres. unfold rational_unify_vt_impl in Heqres.
-    remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' [] ].
-    - good_inversion Heqres. set (H' := Heqres1). apply wf_eqsys_walk_var in H'. subst n.
-      eapply rational_unify_vt_unbound_prop; eauto.
-    - remember (common_part (Cst n) yt) as res2. symmetry in Heqres2.
+    remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1. destruct res1 as [ x' [ z | c | f l r ] ].
+    - good_inversion Heqres. set (H' := Heqres1). apply wf_eqsys_walk_var in H'. subst z.
+      constructor. eapply rational_unify_vt_unbound_prop1; eauto.
+      constructor; intros. eapply rational_unify_vt_unbound_prop2; eauto.
+      constructor; intros. eapply rational_unify_vt_unbound_prop3; eauto.
+      eapply rational_unify_vt_unbound_prop4; eauto.
+    - set (xt := Cst c) in *. remember (common_part xt yt) as res2. symmetry in Heqres2.
       destruct res2; good_inversion Heqres. apply common_part_some in Heqres2.
-      constructor; intros. eapply rational_unify_vt_bound_prop1; eauto. intro. inversion H2.
-      eapply rational_unify_vt_bound_prop2; eauto.
-    - remember (common_part (Con n t t0) yt) as res2. symmetry in Heqres2.
+      assert (forall z, xt <> Var z). intros ? ?. inversion H0.
+      constructor; intros. eapply rational_unify_vt_bound_prop1; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop2; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop3; eauto.
+      constructor. eapply rational_unify_vt_bound_prop4; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop5; eauto.
+      constructor; auto. eapply rational_unify_vt_bound_prop6; eauto.
+    - set (xt := Con f l r) in *. remember (common_part xt yt) as res2. symmetry in Heqres2.
       destruct res2; good_inversion Heqres. apply common_part_some in Heqres2.
-      constructor; intros. eapply rational_unify_vt_bound_prop1; eauto. intro. inversion H2.
-      eapply rational_unify_vt_bound_prop2; eauto.
+      assert (forall z, xt <> Var z). intros ? ?. inversion H0.
+      constructor; intros. eapply rational_unify_vt_bound_prop1; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop2; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop3; eauto.
+      constructor. eapply rational_unify_vt_bound_prop4; eauto.
+      constructor; intros. eapply rational_unify_vt_bound_prop5; eauto.
+      constructor; auto. eapply rational_unify_vt_bound_prop6; eauto.
   * apply rational_unify_vt_none in Heqres. unfold rational_unify_vt_impl in Heqres.
     remember (wf_eqsys_walk s x) as res1. symmetry in Heqres1.
-    destruct res1 as [ x' [] ]. inversion Heqres.
-    - remember (common_part (Cst n) yt) as res2. symmetry in Heqres2.
+    destruct res1 as [ x' [ z | c | f l r ] ]. inversion Heqres.
+    - set (xt := Cst c) in *. remember (common_part xt yt) as res2. symmetry in Heqres2.
       destruct res2; good_inversion Heqres. apply common_part_none in Heqres2. simpl. intros.
       eapply rational_unify_vt_fail_prop; eauto.
-    - remember (common_part (Con n t t0) yt) as res2. symmetry in Heqres2.
+    - set (xt := Con f l r) in *. remember (common_part xt yt) as res2. symmetry in Heqres2.
       destruct res2; good_inversion Heqres. apply common_part_none in Heqres2. simpl. intros.
       eapply rational_unify_vt_fail_prop; eauto.
 Qed.
@@ -1683,10 +2173,12 @@ Inductive rational_unification : wf_eqsys -> term -> term -> option wf_eqsys -> 
                                    -> rational_unification s2 xt yt res
                                    -> rational_unification s1 (Var x) yt res
 | RUTermVar xt y s res : (forall x, xt <> Var x)
-                      -> rational_unification s xt (Var y) res
                       -> rational_unification s (Var y) xt res
+                      -> rational_unification s xt (Var y) res
 | RUCstCstFail c1 c2 s : c1 <> c2 -> rational_unification s (Cst c1) (Cst c2) None
 | RUCstCstStop c s : rational_unification s (Cst c) (Cst c) (Some s)
+| RUCstCon c f l r s : rational_unification s (Cst c) (Con f l r) None
+| RUConCst c f l r s : rational_unification s (Con f l r) (Cst c) None
 | RUConConFail f1 f2 l1 l2 r1 r2 s : f1 <> f2
                                   -> rational_unification s (Con f1 l1 r1) (Con f2 l2 r2) None
 | RUConConContL f l1 l2 r1 r2 s : rational_unification s l1 l2 None
@@ -1700,9 +2192,9 @@ Theorem rational_unification_correct s s' t1 t2 (H : rational_unification s t1 t
   : inf_min_unifying_extension (term_to_inf t1) (term_to_inf t2) (wf_eqsys_to_subst s) (wf_eqsys_to_subst s').
 Proof.
   remember (Some s') as res. revert s' Heqres. induction H; intros; good_inversion Heqres.
-  * apply wf_eqsys_union_prop' in H. auto.
+  * apply wf_eqsys_union_prop' in H. apply H.
   * apply wf_eqsys_union_prop' in H. apply H. auto.
-  * apply rational_unify_vt_prop' in H0. auto.
+  * apply rational_unify_vt_prop' in H0. apply H0.
   * apply rational_unify_vt_prop' in H0. apply H0. auto.
   * apply inf_min_unifying_extension_sym. auto.
   * apply inf_min_unifying_extension_same. apply inf_unifier_refl.
@@ -1732,6 +2224,8 @@ Proof.
   * intro. eapply IHrational_unification. auto. apply inf_unifying_extension_sym. auto.
   * intros [ _ ]. edestruct (H0 Here) as [ ? [] ]. constructor. good_inversion H1.
     good_inversion H2. auto.
+  * intros [ _ ]. edestruct (H Here) as [ ? [] ]. constructor. good_inversion H0. inversion H1.
+  * intros [ _ ]. edestruct (H Here) as [ ? [] ]. constructor. good_inversion H0. inversion H1.
   * intros [ _ ]. edestruct (H0 Here) as [ ? [] ]. constructor. good_inversion H1.
     good_inversion H2. auto.
   * intros []. eapply IHrational_unification. auto. constructor. auto.
@@ -1750,4 +2244,325 @@ Corollary rational_unification_complete' s t1 t2 (H : rational_unification wf_eq
 Proof.
   eapply rational_unification_complete in H. intro. eapply H. constructor; eauto.
   apply inf_subst_more_general_empty.
+Qed.
+
+Lemma rational_unification_result_vars s s' t1 t2 z (H1 : rational_unification s t1 t2 (Some s'))
+                                       (H2 : In z (eqsys_vars (wf_eqsys_get s')))
+                                     : In z (eqsys_vars (wf_eqsys_get s))
+                                    \/ In z (fv_term t1) \/ In z (fv_term t2).
+Proof.
+  remember (Some s') as res. revert s' H2 Heqres. induction H1; intros; good_inversion Heqres; auto.
+  * apply wf_eqsys_union_prop' in H. apply H in H2. simpl. destruct H2 as [ | [ | ] ]; auto.
+  * apply wf_eqsys_union_prop' in H. apply IHrational_unification in H2; auto.
+    left. destruct H as [ _ [ _ [ _ [ ? [] ] ] ] ]. destruct H2 as [ | [ | ] ]; auto.
+    - eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. auto.
+    - eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. auto.
+  * apply rational_unify_vt_prop' in H0. apply H0 in H2. simpl. destruct H2 as [ | [ | ] ]; auto.
+  * apply rational_unify_vt_prop' in H0. apply IHrational_unification in H2; auto.
+    destruct H0 as [ _ [ _ [ _ [ _ [ ? [ ? _ ] ] ] ] ] ]. destruct H2 as [ | [ | ] ]; auto.
+    - apply H0 in H2. destruct H2; auto.
+    - left. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. auto.
+  * apply IHrational_unification in H2; auto. destruct H2 as [ | [ | ] ]; auto.
+  * apply IHrational_unification2 in H2; auto. destruct H2 as [ | [ | ] ].
+    apply IHrational_unification1 in H; auto; destruct H as [ | [ | ] ].
+    auto. all: right.
+    - left. apply ListSet.set_union_intro1. auto.
+    - right. apply ListSet.set_union_intro1. auto.
+    - left. apply ListSet.set_union_intro2. auto.
+    - right. apply ListSet.set_union_intro2. auto.
+Qed.
+
+Definition rational_unification_system_size (xs : var_set) (s : wf_eqsys) : nat * nat :=
+  ( eqsys_roots_num (wf_eqsys_get s) xs
+  , eqsys_nonvar_size (wf_eqsys_get s)
+  ).
+
+Definition rational_unification_size_lt (x y : nat * nat) : Prop :=
+  slexprod _ _ lt lt x y.
+
+Lemma rational_unification_size_lt_lt x y z (H1 : rational_unification_size_lt x y)
+                                      (H2 : rational_unification_size_lt y z)
+                                    : rational_unification_size_lt x z.
+Proof. good_inversion H1; good_inversion H2; try (left; lia). right. lia. Qed.
+
+Lemma rational_unification_size_lt_well_founded : well_founded rational_unification_size_lt.
+Proof. apply wf_slexprod; apply Wf_nat.lt_wf. Qed.
+
+Definition rational_unification_size_le (x y : nat * nat) : Prop :=
+  x = y \/ rational_unification_size_lt x y.
+
+Lemma rational_unification_size_le_lt x y z (H1 : rational_unification_size_le x y)
+                                      (H2 : rational_unification_size_lt y z)
+                                    : rational_unification_size_lt x z.
+Proof. destruct H1. subst. auto. eapply rational_unification_size_lt_lt; eauto. Qed.
+
+Lemma rational_unification_size_lt_le x y z (H1 : rational_unification_size_lt x y)
+                                      (H2 : rational_unification_size_le y z)
+                                    : rational_unification_size_lt x z.
+Proof. destruct H2. subst. auto. eapply rational_unification_size_lt_lt; eauto. Qed.
+
+Lemma rational_unification_size_le_le x y z (H1 : rational_unification_size_le x y)
+                                      (H2 : rational_unification_size_le y z)
+                                    : rational_unification_size_le x z.
+Proof. destruct H1. subst. auto. right. eapply rational_unification_size_lt_le; eauto. Qed.
+
+Lemma rational_unification_size_le_split x y (H1 : fst x <= fst y) (H2 : snd x <= snd y)
+                                       : rational_unification_size_le x y.
+Proof.
+  destruct x as [ x1 x2 ]. destruct y as [ y1 y2 ]. simpl in *.
+  good_inversion H1. good_inversion H2. left. auto. all: right. right. lia. left. lia.
+Qed.
+
+Fixpoint rational_unification_income (t1 t2 : term) : nat :=
+match t1, t2 with
+| Var _, _ => term_nonvar_size t2
+| _, Var _ => term_nonvar_size t1
+| Cst _, _ => 1
+| _, Cst _ => 1
+| Con _ l1 r1, Con _ l2 r2 =>
+  1 + rational_unification_income l1 l2 + rational_unification_income r1 r2
+end.
+
+Lemma rational_unification_income_sym t1 t2 : rational_unification_income t1 t2
+                                            = rational_unification_income t2 t1.
+Proof. revert t2. induction t1; intros; destruct t2; simpl; auto. Qed.
+
+Lemma rational_unification_income_common_part t1 t2 t (H : is_common_part t1 t2 t)
+                                            : rational_unification_income t1 t2 + term_nonvar_size t
+                                            = term_nonvar_size t1 + term_nonvar_size t2.
+Proof. induction H; simpl; try lia. rewrite rational_unification_income_sym. auto. Qed.
+
+Definition rational_unification_size (xs : var_set) (s : wf_eqsys) (t1 t2 : term) : nat * nat :=
+  ( eqsys_roots_num (wf_eqsys_get s) xs
+  , eqsys_nonvar_size (wf_eqsys_get s) + rational_unification_income t1 t2
+  ).
+
+Record rational_unification_task : Set := RUTask {
+  rational_unification_task_system : wf_eqsys ;
+  rational_unification_task_left : term ;
+  rational_unification_task_right : term ;
+}.
+
+Variant rational_unification_recursive_call (xs : var_set)
+  : rational_unification_task -> rational_unification_task -> Prop :=
+| RUUnionCall s1 s2 x y t1 t2
+  : eqsys_roots_num (wf_eqsys_get s2) xs < eqsys_roots_num (wf_eqsys_get s1) xs
+ -> rational_unification_recursive_call xs (RUTask s2 t1 t2) (RUTask s1 (Var x) (Var y))
+| RUCommonPartCall s1 s2 x xt yt t
+  : (forall x, xt <> Var x)
+ -> (forall y, yt <> Var y)
+ -> is_common_part xt yt t
+ -> eqsys_roots_num (wf_eqsys_get s2) xs = eqsys_roots_num (wf_eqsys_get s1) xs
+ -> eqsys_nonvar_size (wf_eqsys_get s2) + term_nonvar_size xt
+  = eqsys_nonvar_size (wf_eqsys_get s1) + term_nonvar_size t
+ -> rational_unification_recursive_call xs (RUTask s2 xt yt) (RUTask s1 (Var x) yt)
+| RUSwapVarTermCall s y xt
+  : (forall x, xt <> Var x)
+ -> rational_unification_recursive_call xs (RUTask s (Var y) xt) (RUTask s xt (Var y))
+| RULeftTermCall s f1 f2 l1 l2 r1 r2
+  : rational_unification_recursive_call xs (RUTask s l1 l2) (RUTask s (Con f1 l1 r1) (Con f2 l2 r2))
+| RURightTermCall s1 s2 f1 f2 l1 l2 r1 r2
+  : rational_unification_size_le (rational_unification_system_size xs s2)
+                                 (rational_unification_size xs s1 l1 l2)
+ -> rational_unification_recursive_call xs (RUTask s2 r1 r2) (RUTask s1 (Con f1 l1 r1) (Con f2 l2 r2))
+.
+
+Lemma rational_unification_recursive_call_well_founded xs : well_founded (rational_unification_recursive_call xs).
+Proof.
+  set (P := fun size => forall s t1 t2, size = rational_unification_size xs s t1 t2
+                                     -> Acc (rational_unification_recursive_call xs) (RUTask s t1 t2)).
+  specialize well_founded_ind with (R := rational_unification_size_lt) (P := P). intro.
+  intros [ s t1 t2 ]. eapply H; try reflexivity. apply rational_unification_size_lt_well_founded.
+  clear s t1 t2 H. subst P. simpl. intros size IH.
+  assert (forall s t1 t2, rational_unification_size_lt (rational_unification_size xs s t1 t2) size
+                       -> Acc (rational_unification_recursive_call xs) (RUTask s t1 t2)). {
+    intros. eapply IH; eauto.
+  }
+  clear IH. rename H into IH.
+  assert (IHvar : forall s x yt, rational_unification_size_le (rational_unification_size xs s (Var x) yt) size
+               -> Acc (rational_unification_recursive_call xs) (RUTask s (Var x) yt)). {
+    intros s1 ? ? ?.
+    assert (forall s t1 t2, rational_unification_size_lt (rational_unification_size xs s t1 t2)
+                                                         (rational_unification_size xs s1 (Var x) yt)
+                         -> Acc (rational_unification_recursive_call xs) (RUTask s t1 t2)). {
+      intros. apply IH. eapply rational_unification_size_lt_le; eauto.
+    }
+    clear size IH H. rename H0 into IH.
+    constructor. intros [ s2 t1' t2' ] H1. good_inversion H1.
+    * apply IH. left. auto.
+    * rename t1' into xt.
+      assert (eqsys_nonvar_size (wf_eqsys_get s2) + rational_unification_income xt yt
+            = eqsys_nonvar_size (wf_eqsys_get s1) + term_nonvar_size yt). {
+        set (H' := H8). apply rational_unification_income_common_part in H'. lia.
+      }
+      clear H10. rename H into H10. good_inversion H8.
+      - exfalso. eapply H6. auto.
+      - exfalso. eapply H7. auto.
+      - constructor. intros. inversion H.
+      - clear H6 H7. constructor. intros. good_inversion H1.
+        + apply IH. unfold rational_unification_size. rewrite H9. right. simpl in *. lia.
+        + apply IH. destruct H4; good_inversion H1. 2: left; lia.
+          all: unfold rational_unification_size; rewrite <- H9.
+          1: rewrite H3. 2: rewrite H5. all: right; simpl in *; lia.
+    * exfalso. eapply H0. auto.
+  }
+  intros s1 t1 t2 ?. subst size. destruct t1 as [ x | c1 | f1 l1 r1 ].
+  * apply IHvar. left. auto.
+  * constructor. intros. good_inversion H. apply IHvar. left. reflexivity.
+  * constructor. intros. good_inversion H.
+    - apply IHvar. left. reflexivity.
+    - apply IH. right. simpl. lia.
+    - apply IH. destruct H2; good_inversion H. 2: left; auto. all: unfold rational_unification_size.
+      1: rewrite H1. 2: rewrite H3. all: right; simpl in *; lia.
+Qed.
+
+Definition rational_unification_result_size_le (xs : var_set) (s : wf_eqsys)
+                                               (t1 t2 : term) (r : option wf_eqsys) : Prop :=
+match r with
+| None => True
+| Some r => rational_unification_size_le (rational_unification_system_size xs r)
+                                         (rational_unification_size xs s t1 t2)
+end.
+
+Lemma rational_unification_result_size_le_le xs s1 s2 r t1 t2 t1' t2'
+    (H1 : rational_unification_size_le (rational_unification_size xs s1 t1' t2')
+                                       (rational_unification_size xs s2 t1 t2))
+    (H2 : rational_unification_result_size_le xs s1 t1' t2' r)
+  : rational_unification_result_size_le xs s2 t1 t2 r.
+Proof. destruct r as [ r | ]; auto. simpl in *. eapply rational_unification_size_le_le; eauto. Qed.
+
+Record rational_unification_task_xs (s : wf_eqsys) (t1 t2 : term) (xs : var_set) : Prop := {
+  rational_unification_task_xs_nodup : NoDup xs ;
+  rational_unification_task_xs_system : incl (eqsys_vars (wf_eqsys_get s)) xs ;
+  rational_unification_task_xs_left : incl (fv_term t1) xs ;
+  rational_unification_task_xs_right : incl (fv_term t2) xs ;
+}.
+
+Definition rational_unification_exists_hlp (xs : var_set) (task : rational_unification_task) : Set :=
+  let (s, t1, t2) := task in
+  rational_unification_task_xs s t1 t2 xs -> { res | rational_unification s t1 t2 res
+                                                  /\ rational_unification_result_size_le xs s t1 t2 res }.
+
+Lemma rational_unification_exists_aux xs task
+  (IH : forall rec, rational_unification_recursive_call xs rec task
+                 -> rational_unification_exists_hlp xs rec)
+: rational_unification_exists_hlp xs task.
+Proof.
+  destruct task as [ s t1 t2 ]. simpl. intros.
+  destruct t1 as [ x | c1 | f1 l1 r1 ]; destruct t2 as [ y | c2 | f2 l2 r2 ].
+  * remember (wf_eqsys_union s x y) as res. symmetry in Heqres.
+    set (H1 := Heqres). apply wf_eqsys_union_prop' in H1. destruct res as [ s' [ [ t1 t2 ] | ] ].
+    - destruct H1 as [ _ [ _ [] ] ]. specialize (IH (RUTask s' t1 t2)). simpl in IH.
+      assert (eqsys_roots_num (wf_eqsys_get s') xs < eqsys_roots_num (wf_eqsys_get s) xs). {
+        rewrite H0. lia. apply H. intros z ?. apply H. apply eqsys_vars_in_dom.
+        apply eqsys_dom_spec. auto.
+      }
+      destruct IH as [ res [] ].
+      + apply RUUnionCall. auto.
+      + constructor. apply H. all: destruct H as [ _ H _ _ ].
+        ** intros z ?. apply H. apply H1. auto.
+        ** intros z ?. apply H. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. apply H1.
+        ** intros z ?. apply H. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. apply H1.
+      + exists res. constructor. eapply RUVarVarCont; eauto. destruct res as [ res | ]; auto.
+        eapply rational_unification_result_size_le_le; eauto. right. left. auto.
+    - exists (Some s'). constructor. apply RUVarVarStop. auto. simpl.
+      apply rational_unification_size_le_split; simpl. apply H1.
+      5: rewrite PeanoNat.Nat.add_0_r; apply H1. apply H.
+      + destruct H as [ _ _ H _ ]. apply H. left. auto.
+      + destruct H as [ _ _ _ H ]. apply H. left. auto.
+      + apply H.
+  * set (yt := Cst c2). assert (Hy : forall y, yt <> Var y). intros ? ?. inversion H0.
+    remember (rational_unify_vt s x yt Hy) as res. symmetry in Heqres.
+    set (H1 := Heqres). eapply rational_unify_vt_prop' in H1. destruct res as [ [ s' [ xt | ] ] | ].
+    - destruct H1 as [ _ [ _ [ ? [ ? [ ? [] ] ] ] ] ].
+      assert (eqsys_roots_num (wf_eqsys_get s') xs = eqsys_roots_num (wf_eqsys_get s) xs). {
+        apply H0. apply H. 2: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
+      }
+      clear H0. specialize (IH (RUTask s' xt yt)). simpl in IH. destruct IH as [ res [] ].
+      + destruct H1 as [ t [] ]. eapply RUCommonPartCall; eauto.
+      + constructor. 1, 4: apply H.
+        ** intros z ?. apply H2 in H0. destruct H0; apply H in H0; auto.
+        ** intros z ?. apply H. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. auto.
+      + exists res. constructor. eapply RUVarTermCont; eauto.
+        eapply rational_unification_result_size_le_le; eauto.
+        apply rational_unification_size_le_split; simpl. lia. destruct H1 as [ t [] ].
+        apply rational_unification_income_common_part in H1. simpl in *. lia.
+    - exists (Some s'). constructor. eapply RUVarTermStop. eauto.
+      destruct H1 as [ _ [] ]. apply rational_unification_size_le_split; simpl in *; try lia.
+      rewrite H0. reflexivity. 1, 3: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
+    - exists None. constructor; simpl; auto. eapply RUVarTermFail. eauto.
+  * set (yt := Con f2 l2 r2). assert (Hy : forall y, yt <> Var y). intros ? ?. inversion H0.
+    remember (rational_unify_vt s x yt Hy) as res. symmetry in Heqres.
+    set (H1 := Heqres). eapply rational_unify_vt_prop' in H1. destruct res as [ [ s' [ xt | ] ] | ].
+    - destruct H1 as [ _ [ _ [ ? [ ? [ ? [] ] ] ] ] ].
+      assert (eqsys_roots_num (wf_eqsys_get s') xs = eqsys_roots_num (wf_eqsys_get s) xs). {
+        apply H0. apply H. 2: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
+      }
+      clear H0. specialize (IH (RUTask s' xt yt)). simpl in IH. destruct IH as [ res [] ].
+      + destruct H1 as [ t [] ]. eapply RUCommonPartCall; eauto.
+      + constructor. 1, 4: apply H.
+        ** intros z ?. apply H2 in H0. destruct H0; apply H in H0; auto.
+        ** intros z ?. apply H. eapply eqsys_vars_in_rhs; eauto. apply eqsys_rhs_in. auto.
+      + exists res. constructor. eapply RUVarTermCont; eauto.
+        eapply rational_unification_result_size_le_le; eauto.
+        apply rational_unification_size_le_split; simpl. lia. destruct H1 as [ t [] ].
+        apply rational_unification_income_common_part in H1. simpl in *. lia.
+    - exists (Some s'). constructor. eapply RUVarTermStop. eauto.
+      destruct H1 as [ _ [] ]. apply rational_unification_size_le_split; simpl in *; try lia.
+      rewrite H0. reflexivity. 1, 3: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
+    - exists None. constructor; simpl; auto. eapply RUVarTermFail. eauto.
+  * set (xt := Cst c1). assert (Hx : forall x, xt <> Var x). intros ? ?. inversion H0.
+    specialize (IH (RUTask s (Var y) xt)). destruct IH as [ res [] ].
+    - apply RUSwapVarTermCall; auto.
+    - constructor; apply H.
+    - exists res. constructor; auto. apply RUTermVar; auto.
+  * destruct (name_eq_dec c1 c2) as [ H1 | H1 ].
+    - subst c2. exists (Some s). constructor. apply RUCstCstStop. right. right. simpl. lia.
+    - exists None. constructor; simpl; auto. apply RUCstCstFail. auto.
+  * exists None. constructor; simpl; auto. apply RUCstCon.
+  * set (xt := Con f1 l1 r1). assert (Hx : forall x, xt <> Var x). intros ? ?. inversion H0.
+    specialize (IH (RUTask s (Var y) xt)). destruct IH as [ res [] ].
+    - apply RUSwapVarTermCall; auto.
+    - constructor; apply H.
+    - exists res. constructor; auto. apply RUTermVar; auto.
+  * exists None. constructor; simpl; auto. apply RUConCst.
+  * destruct (name_eq_dec f1 f2) as [ H1 | H1 ]. subst f2. 2: {
+      exists None. constructor; simpl; auto. apply RUConConFail. auto.
+    }
+    edestruct (IH (RUTask s l1 l2)) as [ [ s2 | ] [] ]. 4: {
+      exists None. constructor; auto. apply RUConConContL. auto.
+    }
+    3: edestruct (IH (RUTask s2 r1 r2)) as [ res [] ]. 5: {
+      exists res. constructor. eapply RUConConContR; eauto.
+      eapply rational_unification_result_size_le_le; eauto.
+      destruct H1; good_inversion H1. 2: right; left; auto.
+      all: unfold rational_unification_size. 1: rewrite H5. 2: rewrite H7.
+      all: right; right; simpl; lia.
+    }
+    - apply RULeftTermCall; auto.
+    - constructor; try apply H.
+      + intros z ?. destruct H as [ _ _ H _ ]. apply H. apply ListSet.set_union_intro1. auto.
+      + intros z ?. destruct H as [ _ _ _ H ]. apply H. apply ListSet.set_union_intro1. auto.
+    - apply RURightTermCall. apply H1.
+    - constructor. apply H.
+      + intros z ?. eapply rational_unification_result_vars in H0; eauto. clear H2.
+        destruct H0 as [ | [ | ] ]. apply H in H0. auto.
+        ** destruct H as [ _ _ H _ ]. apply H. apply ListSet.set_union_intro1. auto.
+        ** destruct H as [ _ _ _ H ]. apply H. apply ListSet.set_union_intro1. auto.
+      + intros z ?. destruct H as [ _ _ H _ ]. apply H. apply ListSet.set_union_intro2. auto.
+      + intros z ?. destruct H as [ _ _ _ H ]. apply H. apply ListSet.set_union_intro2. auto.
+Qed.
+
+Theorem rational_unification_exists s t1 t2 : { res | rational_unification s t1 t2 res }.
+Proof.
+  set (xs := var_set_union (var_set_union (fv_term t1) (fv_term t2)) (eqsys_vars (wf_eqsys_get s))).
+  specialize (rational_unification_exists_aux xs). intro.
+  apply well_founded_induction with (a := RUTask s t1 t2) in H.
+  2: apply rational_unification_recursive_call_well_founded.
+  edestruct H as [ r [] ]. 2: exists r; auto. constructor.
+  * apply ListSet.set_union_nodup. apply ListSet.set_union_nodup; apply fv_term_nodup.
+    apply eqsys_vars_nodup.
+  * intros x ?. apply ListSet.set_union_intro2. auto.
+  * intros x ?. apply ListSet.set_union_intro1. apply ListSet.set_union_intro1. auto.
+  * intros x ?. apply ListSet.set_union_intro1. apply ListSet.set_union_intro2. auto.
 Qed.
