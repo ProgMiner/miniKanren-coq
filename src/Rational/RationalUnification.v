@@ -1,6 +1,7 @@
 From Stdlib Require Import Wellfounded.Lexicographic_Product.
 From Stdlib Require Import Relations.Relation_Operators.
 From Stdlib Require Import Sorting.Permutation.
+From Stdlib Require Import Extraction.
 From Stdlib Require Import List.
 From Stdlib Require Import Lia.
 Import ListNotations.
@@ -602,7 +603,7 @@ Proof.
   eapply eqsys_walk_hlp_fuel. eauto. transitivity (length (eqsys_dom s)).
   2: apply eqsys_dom_size. apply NoDup_incl_length. eapply eqsys_walk_fuel_path_nodup. eauto.
   eapply eqsys_walk_fuel_path_in_dom. eauto.
-Qed.
+Defined.
 
 Definition eqsys_well_formed (s : eqsys) : Prop := forall x, eqsys_walkable s x.
 
@@ -1411,7 +1412,7 @@ Proof.
       subst n0. destruct (IHt1_1 t2_1). destruct (IHt1_2 t2_2).
       destruct s as [ l H1 ]. destruct s0 as [ r H2 ]. left. exists (Con n l r). constructor; auto.
       all: right; intro; destruct H; good_inversion H; apply n0; eexists; eauto.
-Qed.
+Defined.
 
 Definition common_part (t1 t2 : term) : option term :=
 match common_part_aux t1 t2 with
@@ -1870,7 +1871,7 @@ Proof.
   remember (rational_unify_vt_impl s x yt) as res. symmetry in Heqres. destruct res as [ [ s' xt ] | ].
   * exists (Some (exist _ _ (rational_unify_vt_impl_well_formed _ _ _ _ _ H Heqres), xt)). auto.
   * exists None. auto.
-Qed.
+Defined.
 
 Definition rational_unify_vt (s : wf_eqsys) (x : name) (yt : term) (H : forall y, yt <> Var y)
                            : option (wf_eqsys * option term) :=
@@ -2551,7 +2552,7 @@ Proof.
         ** destruct H as [ _ _ _ H ]. apply H. apply ListSet.set_union_intro1. auto.
       + intros z ?. destruct H as [ _ _ H _ ]. apply H. apply ListSet.set_union_intro2. auto.
       + intros z ?. destruct H as [ _ _ _ H ]. apply H. apply ListSet.set_union_intro2. auto.
-Qed.
+Defined.
 
 Theorem rational_unification_exists s t1 t2 : { res | rational_unification s t1 t2 res }.
 Proof.
@@ -2565,4 +2566,9 @@ Proof.
   * intros x ?. apply ListSet.set_union_intro2. auto.
   * intros x ?. apply ListSet.set_union_intro1. apply ListSet.set_union_intro1. auto.
   * intros x ?. apply ListSet.set_union_intro1. apply ListSet.set_union_intro2. auto.
-Qed.
+Defined.
+
+Extraction Language Haskell.
+
+Set Extraction Output Directory "./extracted".
+Extraction "rational_unification.hs" rational_unification_exists.
