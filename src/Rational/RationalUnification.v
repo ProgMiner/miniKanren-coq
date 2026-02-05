@@ -6,8 +6,8 @@ From Stdlib Require Import List.
 From Stdlib Require Import Lia.
 Import ListNotations.
 
-Require Import Unification.
 Require Import RationalTerm.
+Require Import Unification.
 
 Definition eqsys := list (name * term).
 
@@ -1476,8 +1476,7 @@ end.
 (*
 Тут есть варианты:
 1. Когда с одной стороны свободная переменная, можно цеплять её за терм другой переменной —
-   это даст такую же систему с точностью до walk, но увеличит размер системы,
-   что значительно усложняет доказательство терминируемости
+   это даст такую же систему с точностью до walk, но приведёт к потере терминируемости
 2. Когда с обеих сторон связанные переменные, можно вычислять common part
    и связывать объединённые переменные с ним — это должно быть эквивалентно
    с точки зрения спецификации union и позволяет ускорять алгоритм за счёт
@@ -2151,8 +2150,8 @@ Inductive rational_unification : wf_eqsys -> term -> term -> option wf_eqsys -> 
 | RUVarVarStop x y s1 s2 : wf_eqsys_union s1 x y = (s2, None)
                         -> rational_unification s1 (Var x) (Var y) (Some s2)
 | RUVarVarCont x y t1 t2 s1 s2 res : wf_eqsys_union s1 x y = (s2, Some (t1, t2))
-                                 -> rational_unification s2 t1 t2 res
-                                 -> rational_unification s1 (Var x) (Var y) res
+                                  -> rational_unification s2 t1 t2 res
+                                  -> rational_unification s1 (Var x) (Var y) res
 | RUVarTermFail x yt H s : rational_unify_vt s x yt H = None
                         -> rational_unification s (Var x) yt None
 | RUVarTermStop x yt H s1 s2 : rational_unify_vt s1 x yt H = Some (s2, None)
