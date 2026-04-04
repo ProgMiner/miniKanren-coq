@@ -1,8 +1,7 @@
-Require Import List.
+From Stdlib Require Import List.
 Import ListNotations.
-Require Import Coq.Lists.ListSet.
-Require Import Arith.
-Require Import Omega.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Import Arith.
 
 Require Import Unification.
 

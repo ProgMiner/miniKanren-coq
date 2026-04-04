@@ -1,9 +1,8 @@
-Require Import List.
+From Stdlib Require Import List.
 Import ListNotations.
-Require Import Coq.Lists.ListSet.
-Require Import Coq.Program.Equality.
-Require Import Omega.
-Require Import Extraction.
+From Stdlib Require Import Lists.ListSet.
+From Stdlib Require Import Program.Equality.
+From Stdlib Require Import Extraction.
 
 Require Import Unification.
 Require Import Streams.
@@ -24,7 +23,7 @@ Inductive state : Set :=
 | NTState : forall (st : nt_state), state.
 
 (* Functions on states *)
-Fixpoint union (x y : state) : state :=
+Definition union (x y : state) : state :=
   match x with
   | Stop       => y
   | NTState sx => match y with

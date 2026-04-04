@@ -1,7 +1,11 @@
 *.glob
 .*.aux
 *.vo
+*.vok
+*.vos
 *~
 _CoqProject
 Makefile.coq
 Makefile.coq.conf
+.Makefile.coq.d
+.lia.cache
