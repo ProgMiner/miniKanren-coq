@@ -2300,28 +2300,28 @@ Proof.
   good_inversion H1. good_inversion H2. left. auto. all: right. right. lia. left. lia.
 Qed.
 
-Fixpoint rational_unification_income (t1 t2 : term) : nat :=
+Fixpoint rational_unification_cost (t1 t2 : term) : nat :=
 match t1, t2 with
 | Var _, _ => term_nonvar_size t2
 | _, Var _ => term_nonvar_size t1
 | Cst _, _ => 1
 | _, Cst _ => 1
 | Con _ l1 r1, Con _ l2 r2 =>
-  1 + rational_unification_income l1 l2 + rational_unification_income r1 r2
+  1 + rational_unification_cost l1 l2 + rational_unification_cost r1 r2
 end.
 
-Lemma rational_unification_income_sym t1 t2 : rational_unification_income t1 t2
-                                            = rational_unification_income t2 t1.
+Lemma rational_unification_cost_sym t1 t2 : rational_unification_cost t1 t2
+                                          = rational_unification_cost t2 t1.
 Proof. revert t2. induction t1; intros; destruct t2; simpl; auto. Qed.
 
-Lemma rational_unification_income_common_part t1 t2 t (H : is_common_part t1 t2 t)
-                                            : rational_unification_income t1 t2 + term_nonvar_size t
-                                            = term_nonvar_size t1 + term_nonvar_size t2.
-Proof. induction H; simpl; try lia. rewrite rational_unification_income_sym. auto. Qed.
+Lemma rational_unification_cost_common_part t1 t2 t (H : is_common_part t1 t2 t)
+                                          : rational_unification_cost t1 t2 + term_nonvar_size t
+                                          = term_nonvar_size t1 + term_nonvar_size t2.
+Proof. induction H; simpl; try lia. rewrite rational_unification_cost_sym. auto. Qed.
 
 Definition rational_unification_size (xs : var_set) (s : wf_eqsys) (t1 t2 : term) : nat * nat :=
   ( eqsys_roots_num (wf_eqsys_get s) xs
-  , eqsys_nonvar_size (wf_eqsys_get s) + rational_unification_income t1 t2
+  , eqsys_nonvar_size (wf_eqsys_get s) + rational_unification_cost t1 t2
   ).
 
 Record rational_unification_task : Set := RUTask {
@@ -2378,9 +2378,9 @@ Proof.
     constructor. intros [ s2 t1' t2' ] H1. good_inversion H1.
     * apply IH. left. auto.
     * rename t1' into xt.
-      assert (eqsys_nonvar_size (wf_eqsys_get s2) + rational_unification_income xt yt
+      assert (eqsys_nonvar_size (wf_eqsys_get s2) + rational_unification_cost xt yt
             = eqsys_nonvar_size (wf_eqsys_get s1) + term_nonvar_size yt). {
-        set (H' := H8). apply rational_unification_income_common_part in H'. lia.
+        set (H' := H8). apply rational_unification_cost_common_part in H'. lia.
       }
       clear H10. rename H into H10. good_inversion H8.
       - exfalso. eapply H6. auto.
@@ -2473,7 +2473,7 @@ Proof.
       + exists res. constructor. eapply RUVarTermCont; eauto.
         eapply rational_unification_result_size_le_le; eauto.
         apply rational_unification_size_le_split; simpl. lia. destruct H1 as [ t [] ].
-        apply rational_unification_income_common_part in H1. simpl in *. lia.
+        apply rational_unification_cost_common_part in H1. simpl in *. lia.
     - exists (Some s'). constructor. eapply RUVarTermStop. eauto.
       destruct H1 as [ _ [] ]. apply rational_unification_size_le_split; simpl in *; try lia.
       rewrite H0. reflexivity. 1, 3: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
@@ -2493,7 +2493,7 @@ Proof.
       + exists res. constructor. eapply RUVarTermCont; eauto.
         eapply rational_unification_result_size_le_le; eauto.
         apply rational_unification_size_le_split; simpl. lia. destruct H1 as [ t [] ].
-        apply rational_unification_income_common_part in H1. simpl in *. lia.
+        apply rational_unification_cost_common_part in H1. simpl in *. lia.
     - exists (Some s'). constructor. eapply RUVarTermStop. eauto.
       destruct H1 as [ _ [] ]. apply rational_unification_size_le_split; simpl in *; try lia.
       rewrite H0. reflexivity. 1, 3: apply H. destruct H as [ _ _ H _ ]. apply H. left. auto.
