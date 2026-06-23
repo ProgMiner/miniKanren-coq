@@ -1474,13 +1474,13 @@ match res with
 end.
 
 (*
-Тут есть варианты:
-1. Когда с одной стороны свободная переменная, можно цеплять её за терм другой переменной —
-   это даст такую же систему с точностью до walk, но приведёт к потере терминируемости
-2. Когда с обеих сторон связанные переменные, можно вычислять common part
-   и связывать объединённые переменные с ним — это должно быть эквивалентно
-   с точки зрения спецификации union и позволяет ускорять алгоритм за счёт
-   раннего обнаружения ошибок и упрощения системы, но на терминируемость глобально не влияет
+There are variants:
+1. When one of the variables is free, we may bind it with the term of the other one - it gives
+   the same equation system w.r.t. walk but loses the termination of the unification algorithm
+2. When both variables are bound, we may take the common part of them right-hand sides and use it
+   for union result - it should be equivalent w.r.t. the union spec and may speed up the algorithm
+   by more eager failure detection but doesn't affect the termination of the algorithm and requires
+   more complex type of the function in Rocq
 *)
 
 Definition eqsys_union (s : wf_eqsys) (x y : name) : eqsys * option (term * term) :=
