@@ -2,6 +2,7 @@ From Stdlib Require Import Wellfounded.Lexicographic_Product.
 From Stdlib Require Import Relations.Relation_Operators.
 From Stdlib Require Import Sorting.Permutation.
 From Stdlib Require Import Extraction.
+From Stdlib Require Import Morphisms.
 From Stdlib Require Import List.
 From Stdlib Require Import Lia.
 Import ListNotations.
@@ -389,7 +390,7 @@ Proof.
 Qed.
 
 Polymorphic Lemma singleton_nodup {A : Type} (x : A) : NoDup [x].
-Proof. constructor. intro. inversion H. constructor. Qed.
+Proof. constructor. intro; inversion H. constructor. Qed.
 
 Lemma eqsys_walk_fuel_path_nodup s x p (H : eqsys_walk_fuel_path s x p) : NoDup p.
 Proof.
@@ -823,15 +824,27 @@ Proof.
 Qed.
 
 Lemma wf_eqsys_image_walk s x : inf_term_eq (wf_eqsys_image s x) (wf_eqsys_apply s (snd (wf_eqsys_walk s x))).
-Proof. etransitivity. apply wf_eqsys_image_hlp_step. rewrite wf_eqsys_image_hlp_apply. reflexivity. Qed.
+Proof. unfold wf_eqsys_image. now rewrite wf_eqsys_image_hlp_step, wf_eqsys_image_hlp_apply. Qed.
 
 Lemma wf_eqsys_apply_eq s1 s2 t (H : wf_eqsys_eq s1 s2)
                       : inf_term_eq (wf_eqsys_apply s1 t) (wf_eqsys_apply s2 t).
 Proof.
   induction t; simpl.
-  * apply wf_eqsys_image_eq. auto.
+  * now apply wf_eqsys_image_eq.
   * reflexivity.
-  * apply inf_term_eq_con; auto.
+  * now apply inf_term_eq_con.
+Qed.
+
+Instance wf_eqsys_apply_proper : Proper (wf_eqsys_eq ==> eq ==> inf_term_eq) wf_eqsys_apply.
+Proof.
+  intros s1 s2 Hs t t' ?; subst.
+  apply wf_eqsys_apply_eq; assumption.
+Qed.
+
+Instance wf_eqsys_image_proper : Proper (wf_eqsys_eq ==> eq ==> inf_term_eq) wf_eqsys_image.
+Proof.
+  intros s1 s2 Hs x x' ?; subst.
+  apply wf_eqsys_image_eq; assumption.
 Qed.
 
 Definition wf_eqsys_inf_subterms (s : wf_eqsys) : list inf_term :=
@@ -861,9 +874,9 @@ Proof.
     induction xs as [ | y xs IH ]. inversion i. simpl. destruct (name_eq_dec x y). subst. auto.
     apply IH. destruct i; auto. subst. contradiction.
   * transitivity (InfVar x).
-    - apply inf_image_dom. intro. apply n. apply eqsys_dom_spec. apply wf_eqsys_to_subst_dom'. auto.
+    - apply inf_image_dom. intro. apply n. apply eqsys_dom_spec. now apply wf_eqsys_to_subst_dom'.
     - rewrite inf_term_step_prop. simpl. erewrite (wf_eqsys_walk_ext _ _ (x, Var x)). auto.
-      constructor. apply in_eqsys_dom_inv. intro. apply n. apply eqsys_dom_spec. auto.
+      constructor. apply in_eqsys_dom_inv. intro. apply n. now apply eqsys_dom_spec.
 Qed.
 
 Lemma wf_eqsys_to_subst_dom s x : in_eqsys_dom (wf_eqsys_get s) x
@@ -891,6 +904,12 @@ Lemma wf_eqsys_to_subst_eq s1 s2 (H : wf_eqsys_eq s1 s2)
 Proof.
   apply inf_subst_eq_ext. intro. repeat rewrite wf_eqsys_to_subst_image.
   apply wf_eqsys_image_eq. auto.
+Qed.
+
+Instance wf_eqsys_to_subst_proper : Proper (wf_eqsys_eq ==> inf_subst_eq) wf_eqsys_to_subst.
+Proof.
+  intros s1 s2 Hs.
+  apply wf_eqsys_to_subst_eq; assumption.
 Qed.
 
 Lemma wf_eqsys_to_subst_ext_walk s1 s2 (H : forall x, wf_eqsys_walk s1 x = wf_eqsys_walk s2 x)
@@ -945,11 +964,11 @@ Proof.
     - apply Exists_cons_tl. apply Exists_map. apply Exists_flat_map. apply Exists_exists.
       exists (snd (wf_eqsys_walk s x)). constructor. apply eqsys_rhs_in. auto. apply Exists_exists.
       exists (snd (wf_eqsys_walk s x)). constructor. apply term_subterms_self.
-      etransitivity. eauto. apply wf_eqsys_image_walk.
-    - destruct H as [ y H ]. rewrite H. simpl. apply Exists_cons_hd. etransitivity. eauto.
-      rewrite inf_term_step_prop at 1. simpl. rewrite H. reflexivity.
+      rewrite H1. apply wf_eqsys_image_walk.
+    - destruct H as [ y H ]. rewrite H. simpl. apply Exists_cons_hd. rewrite H1.
+      rewrite inf_term_step_prop at 1. simpl. now rewrite H.
   * apply Exists_cons_tl. apply Exists_map. apply Exists_exists. eexists. constructor. eauto.
-    etransitivity. eauto. rewrite wf_eqsys_image_hlp_apply. reflexivity.
+    now rewrite H1, wf_eqsys_image_hlp_apply.
 Qed.
 
 Corollary wf_eqsys_to_subst_image_rational s x : is_rational_term (inf_image (wf_eqsys_to_subst s) x).
@@ -960,12 +979,13 @@ Corollary wf_eqsys_to_subst_apply_rational s t (H : is_rational_term t)
 Proof. apply inf_subst_apply_rational; auto. apply wf_eqsys_to_subst_rational. Qed.
 
 Corollary wf_eqsys_image_rational s x : is_rational_term (wf_eqsys_image s x).
-Proof. rewrite <- wf_eqsys_to_subst_image. apply wf_eqsys_to_subst_image_rational. Qed.
+Proof. rewrite <- wf_eqsys_to_subst_image. now apply wf_eqsys_to_subst_image_rational. Qed.
 
 Corollary wf_eqsys_apply_rational s t : is_rational_term (wf_eqsys_apply s t).
 Proof.
   rewrite <- wf_eqsys_to_subst_apply. apply inf_subst_apply_rational.
-  apply wf_eqsys_to_subst_rational. apply term_to_inf_rational.
+  * apply wf_eqsys_to_subst_rational.
+  * apply term_to_inf_rational.
 Qed.
 
 Lemma wf_eqsys_to_subst_extend_unbound s1 s2 x t (H1 : ~in_eqsys_dom (wf_eqsys_get s1) x)
@@ -1292,10 +1312,7 @@ Qed.
 Lemma wf_eqsys_to_subst_extend_unbound_more_general s1 s2 x t
   (H1 : ~in_eqsys_dom (wf_eqsys_get s1) x) (H2 : wf_eqsys_get s2 = (x, t) :: wf_eqsys_get s1)
 : inf_subst_more_general (wf_eqsys_to_subst s1) (wf_eqsys_to_subst s2).
-Proof.
-  exists (inf_subst_singleton x (wf_eqsys_image s2 x)).
-  eapply wf_eqsys_to_subst_extend_unbound; eauto.
-Qed.
+Proof. eexists. eapply wf_eqsys_to_subst_extend_unbound; eauto. Qed.
 
 Inductive is_common_part : term -> term -> term -> Prop :=
 | VarLCP x t : is_common_part (Var x) t (Var x)
@@ -1359,7 +1376,7 @@ Lemma is_common_part_inf_unifiable s t1 t2 t (H1 : is_common_part t1 t2 t)
 Proof.
   induction H1; auto. apply inf_unifier_refl. unfold inf_unifier in H2 |- *.
   rewrite inf_term_step_prop in H2 at 1 |- * at 1. rewrite inf_term_step_prop in H2 |- *.
-  simpl in H2 |- *. apply inf_term_eq_con.
+  simpl in H2 |- *. unfold inf_unifier in *. apply inf_term_eq_con. auto.
   * apply IHis_common_part1. eapply inf_term_eq_conl. eauto.
   * apply IHis_common_part2. eapply inf_term_eq_conr. eauto.
 Qed.
@@ -1598,9 +1615,9 @@ Lemma wf_eqsys_union_unbound_prop2 s s' x y x' y' t xs
   (H6 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
 : eqsys_roots_num (wf_eqsys_get s') xs <= eqsys_roots_num (wf_eqsys_get s) xs.
 Proof.
-  assert (In x' xs). apply wf_eqsys_walk_in_vars in H4. destruct H4; subst; auto.
-  assert (is_eqsys_root (wf_eqsys_get s) x' = true). apply wf_eqsys_walk_root in H4. auto.
-  erewrite (eqsys_roots_num_extend_var (wf_eqsys_get s) _ x' y'); eauto. rewrite H6. lia.
+  assert (In x' xs) by (apply wf_eqsys_walk_in_vars in H4; destruct H4; subst; auto).
+  assert (is_eqsys_root (wf_eqsys_get s) x' = true) by (apply wf_eqsys_walk_root in H4; auto).
+  erewrite (eqsys_roots_num_extend_var (wf_eqsys_get s) _ x' y'); eauto; rewrite H6; lia.
 Qed.
 
 Lemma wf_eqsys_union_unbound_prop3 s s' x y x' y' t
@@ -1608,8 +1625,8 @@ Lemma wf_eqsys_union_unbound_prop3 s s' x y x' y' t
   (H3 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
 : eqsys_nonvar_size (wf_eqsys_get s') <= eqsys_nonvar_size (wf_eqsys_get s).
 Proof.
-  rewrite H3. specialize (eqsys_nonvar_size_extend x' (Var y') (wf_eqsys_get s)).
-  intro. simpl in H. lia.
+  specialize (eqsys_nonvar_size_extend x' (Var y') (wf_eqsys_get s)).
+  intro. simpl in H. rewrite H3. lia.
 Qed.
 
 Lemma wf_eqsys_union_unbound_prop4 s s' x y x' y' t z
@@ -1724,10 +1741,12 @@ Lemma wf_eqsys_union_bound_prop3 s s' x x' y' t xs
   (H4 : wf_eqsys_walk s x = (x', t)) (H5 : wf_eqsys_get s' = (x', Var y') :: wf_eqsys_get s)
 : eqsys_roots_num (wf_eqsys_get s) xs = 1 + eqsys_roots_num (wf_eqsys_get s') xs.
 Proof.
-  rewrite H5. apply eqsys_roots_num_extend_var. auto.
-  * destruct t. apply wf_eqsys_walk_var in H4. subst n. contradiction.
-    all: apply H2; apply eqsys_dom_spec; eapply wf_eqsys_walk_var_dom_inv; eauto.
-  * apply wf_eqsys_walk_root in H4. auto.
+  rewrite H5. apply eqsys_roots_num_extend_var; auto.
+  * destruct t.
+    - apply wf_eqsys_walk_var in H4. subst n. contradiction.
+    - apply H2. apply eqsys_dom_spec. eapply wf_eqsys_walk_var_dom_inv; eauto.
+    - apply H2. apply eqsys_dom_spec. eapply wf_eqsys_walk_var_dom_inv; eauto.
+  * apply wf_eqsys_walk_root in H4; auto.
 Qed.
 
 Lemma wf_eqsys_union_bound_prop4 s s' x x' y y' t1 t2
