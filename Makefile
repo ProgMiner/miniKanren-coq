@@ -1,5 +1,5 @@
 COQMODULE    := semantics
-COQTHEORIES  := src/Preliminaries/*.v src/Syntax/*.v src/InterleavingSearch/*.v src/SLDSearch/*.v src/FairConjunction/*.v
+COQTHEORIES  := src/Preliminaries/*.v src/Syntax/*.v src/InterleavingSearch/*.v src/SLDSearch/*.v src/FairConjunction/*.v src/Rational/*.v
 
 .PHONY: all theories clean tounicode
 
